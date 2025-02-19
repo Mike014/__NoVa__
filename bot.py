@@ -84,13 +84,18 @@ def generate_response(user_id, user_input):
     context = "\n".join(conversation_history[user_id])
 
     # New prompt with conversation context
-    prompt = f"""{system_prompt}
+    prompt = f"""<s><<SYS>>
+{system_prompt}
+<</SYS>>
+
 Previous conversation:
 {context}
 
-User: {cleaned_input}
-Assistant:
+[INST] {cleaned_input} [/INST]
 """
+# <<SYS>> ... <</SYS>> → Delimits the system prompt
+# [INST] ... [/INST] → Indicates the user's turn
+# context → Remembers the previous conversation
 
     try:
         response = ai_client.text_generation(
