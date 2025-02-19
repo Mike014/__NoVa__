@@ -33,7 +33,7 @@ models = {
 }
 
 # Active model (default: LLaMA)
-active_model = "llama"
+active_model = "gemma"
 
 # System prompt for NoVa
 system_prompt = """<|begin_of_text|><|start_header_id|>system<|end_header_id|>
@@ -113,7 +113,7 @@ def generate_response(user_id, user_input, model_choice):
 
         # Decode the output correctly
         if isinstance(output, str):  
-            response = output.strip()  # If it's already text, just clean it
+            response = output.strip()  
         else:  
             response = tokenizer.decode(output["input_ids"].tolist()[0], skip_special_tokens=True).strip()
 
@@ -124,17 +124,24 @@ def generate_response(user_id, user_input, model_choice):
         response = re.sub(r"</?\|?eot_id\|?>", "", response)
         response = re.sub(r"</?\|?start_header_id\|?>", "", response)
         response = re.sub(r"<\|end_header_id\|>", "", response)
+        response = re.sub(r"\[INST\]", "", response)
+        response = re.sub(r"<s>", "", response)
+        response = re.sub(r"<<SYS>>", "", response)
+        response = re.sub(r"<</SYS>>", "", response)
+
         response = re.sub(r"<\|user\|>", "", response)
-        response = re.sub(r"<\|.*?\|>", "", response)  # Remove any other special tokens
+        response = re.sub(r"<\|.*?\|>", "", response) 
         
         # Remove unwanted HTML characters
-        response = re.sub(r"</?[a-zA-Z]+>", "", response)  # Remove HTML tags like `<pre>`, `</pre>`, etc.
+        response = re.sub(r"</?[a-zA-Z]+>", "", response)  
 
         # Remove extra spaces
         response = re.sub(r"\s+", " ", response).strip()
 
         print(f"[DEBUG] AI Response: {response}")
-        return response
+        response_chunks = [response[i:i+2000] for i in range(0, len(response), 2000)]
+        response_chunks = re.sub(r"[\[\]]", "", response)
+        return response_chunks
 
     except Exception as e:
         print(f"ERROR: {e}")
@@ -170,3 +177,8 @@ async def on_message(message):
         await message.channel.send(bot_response)
 
 client.run(TOKEN)
+
+
+
+
+ 
