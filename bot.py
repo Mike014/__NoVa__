@@ -1,39 +1,36 @@
 import discord
 import os
 import re
-from huggingface_hub import InferenceClient
-from dotenv import load_dotenv
-from github_api import search_github_code
 import requests
+from dotenv import load_dotenv
+from huggingface_hub import InferenceClient
+from transformers import AutoTokenizer
 
 # Load environment variables from the .env file
 load_dotenv()
 
-# Retrieve the Discord API token and Hugging Face API key from environment variables
 TOKEN = os.getenv("DISCORD_API_TOKEN")
 API_KEY = os.getenv("HUGGINGFACE_API_KEY")
 
-# Raise an error if the Hugging Face API key is not found
 if API_KEY is None:
-    raise ValueError("API key not found. Make sure the .env file contains the HUGGINGFACE_API_KEY variable.")
+    raise ValueError("API key not found. Ensure the .env file contains the HUGGINGFACE_API_KEY variable.")
 
-# Set up Discord bot intents
+# Configure Discord bot intents
 intents = discord.Intents.default()
-intents.message_content = True  # Required to read messages
-
-# Initialize the Discord client
+intents.message_content = True  
 client = discord.Client(intents=intents)
 
-# Initialize clients for both LLM models
-llama_client = InferenceClient(
-    model="meta-llama/Llama-3.2-3B-Instruct",
-    token=API_KEY
-)
-
-gemma_client = InferenceClient(
-    model="google/gemma-2-2b-it",
-    token=API_KEY
-)
+# Initialize models and tokenizers
+models = {
+    "llama": {
+        "client": InferenceClient(model="meta-llama/Llama-3.2-3B-Instruct", token=API_KEY),
+        "tokenizer": AutoTokenizer.from_pretrained("meta-llama/Llama-3.2-3B-Instruct")
+    },
+    "gemma": {
+        "client": InferenceClient(model="google/gemma-2-2b-it", token=API_KEY),
+        "tokenizer": AutoTokenizer.from_pretrained("google/gemma-2-2b-it")
+    }
+}
 
 # Active model (default: LLaMA)
 active_model = "llama"
@@ -68,83 +65,42 @@ Context Awareness:
 # Dictionary to store conversation history for each user
 conversation_history = {}
 
-def extract_code_from_github(file_url):
-    """Download code from the GitHub file and return only the relevant block."""
-    raw_url = file_url.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/")
-    
-    try:
-        response = requests.get(raw_url)
-        if response.status_code == 200:
-            return f"```python\n{response.text.strip()}\n```"
-        else:
-            return f"Cannot retrieve code from file: {file_url}"
-    except Exception as e:
-        return f"Error retrieving code: {e}"
-
 def generate_response(user_id, user_input, model_choice):
+    """Generate a response using the selected model."""
     print(f"[DEBUG] Generating response for: {user_input} with model {model_choice}")
 
-    # Select the appropriate client based on the model choice
-    client = llama_client if model_choice == "llama" else gemma_client
+    model_data = models.get(model_choice)
+    if model_data is None:
+        return "Error: Invalid model selected."
+
+    client = model_data["client"]
+    tokenizer = model_data["tokenizer"]
+
     cleaned_input = re.sub(r'<@!?[0-9]+>', '', user_input).strip()
     if not cleaned_input:
         return None
 
-    # Check if the message requires code
-    keywords = {
-        "create a function": "function",
-        "generate code": "code",
-        "print": "print",
-        "class": "class",
-        "define": "def ",
-        "implement": "implement"
-    }
-
-    detected_keyword = next((key for key in keywords if key in cleaned_input.lower()), None)
-
-    if detected_keyword:
-        # Determine the language from the user's prompt
-        language = "python"
-        if "java" in cleaned_input.lower():
-            language = "java"
-        elif "c++" in cleaned_input.lower():
-            language = "cpp"
-        elif "javascript" in cleaned_input.lower():
-            language = "javascript"
-
-        github_result = search_github_code(cleaned_input, language)
-
-    # Save the conversation history
-    if user_id not in conversation_history:
-        conversation_history[user_id] = []
-    
+    # Store conversation context
+    conversation_history.setdefault(user_id, [])
     conversation_history[user_id].append(cleaned_input)
-    if len(conversation_history[user_id]) > 5:
+    if len(conversation_history[user_id]) > 15:
         conversation_history[user_id].pop(0)
 
     context = "\n".join(conversation_history[user_id])
     print(f"[DEBUG] Conversation context for user {user_id}: {context}")
 
-    # Clean prompt compatible with Gemma
+    # Format the prompt
     if model_choice == "gemma":
-        prompt = f"""{system_prompt}
-        Previous conversation:
-        {context}
+        prompt = f"{system_prompt}\nPrevious conversation:\n{context}\n\nUser: {cleaned_input}\nAssistant:"
+    else:
+        prompt = f"<s><<SYS>>{system_prompt}<</SYS>>\nPrevious conversation:\n{context}\n\n[INST] {cleaned_input} [/INST]\nAssistant:"
 
-        User: {cleaned_input}
-        Assistant:
-        """
-    else:  # Prompt for LLaMA
-        prompt = f"""<s><<SYS>>{system_prompt}<</SYS>>
-        Previous conversation:
-        {context}
-
-        [INST] {cleaned_input} [/INST]
-        Assistant:
-        """
+    # Tokenize the prompt
+    inputs = tokenizer(prompt, return_tensors="pt")
 
     try:
-        response = client.text_generation(
+        # Generate the response from the model
+        output = client.text_generation(
             prompt, 
             max_new_tokens=500,  
             temperature=0.7,
@@ -155,27 +111,35 @@ def generate_response(user_id, user_input, model_choice):
             stream=False
         )
 
-        # Remove unnecessary system tokens generated by Gemma
+        # Decode the output correctly
+        if isinstance(output, str):  
+            response = output.strip()  # If it's already text, just clean it
+        else:  
+            response = tokenizer.decode(output["input_ids"].tolist()[0], skip_special_tokens=True).strip()
+
+        # Advanced output cleaning to remove unwanted text
+        response = output.strip()
+
+        # Remove system tokens
         response = re.sub(r"</?\|?eot_id\|?>", "", response)
         response = re.sub(r"</?\|?start_header_id\|?>", "", response)
-        response = re.sub(r"<\|begin_of_text\|>", "", response)
         response = re.sub(r"<\|end_header_id\|>", "", response)
-        response = re.sub(r"<\|start_header_id\|>", "", response)
         response = re.sub(r"<\|user\|>", "", response)
-        response = re.sub(r"<\|eot_id\|>", "", response)
-        response = re.sub(r"<\|start_header_id\|>user<\|end_header_id\|>", "", response)
-        response = re.sub(r"<</SYS>>", "", response)
-        response = re.sub(r"[/INST]", "", response)
-        response = response.strip()
+        response = re.sub(r"<\|.*?\|>", "", response)  # Remove any other special tokens
+        
+        # Remove unwanted HTML characters
+        response = re.sub(r"</?[a-zA-Z]+>", "", response)  # Remove HTML tags like `<pre>`, `</pre>`, etc.
 
-        print(f"[DEBUG] AI Response: {response}")  
+        # Remove extra spaces
+        response = re.sub(r"\s+", " ", response).strip()
+
+        print(f"[DEBUG] AI Response: {response}")
         return response
 
     except Exception as e:
-        print(f"ERROR: {e}")  
+        print(f"ERROR: {e}")
         return f"Sorry, an error occurred: {e}"
 
-# Event when the bot is ready
 @client.event
 async def on_ready():
     print(f'Bot {client.user} is online and connected to Discord!')
@@ -187,10 +151,8 @@ async def on_message(message):
     if message.author == client.user or message.author.bot:
         return
 
-    # Remove mentions and clean the text
     content = re.sub(r'<@!?[0-9]+>', '', message.content).strip().lower()
 
-    # Handle model switching
     if content == "!use gemma":
         active_model = "gemma"
         await message.channel.send("Now NoVa is using Google Gemma!")
@@ -201,12 +163,10 @@ async def on_message(message):
         await message.channel.send("Now NoVa is using Meta-Llama-3.2-3B!")
         return
 
-    # If the message is not a command, handle it with the active AI model
     print(f"[DEBUG] Received message: {message.content}")
     bot_response = generate_response(message.author.id, message.content, active_model)
 
     if bot_response:
         await message.channel.send(bot_response)
 
-# Start the bot
 client.run(TOKEN)
