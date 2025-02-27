@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from huggingface_hub import InferenceClient
 from transformers import AutoTokenizer
 from parser import parse_command
-from smolagents_NoVa_ import search_on_the_web
+from smolagents_NoVa_ import SearchWebTool, SummarizeTextTool, VisitWebpageToolCustom, agent
 
 # Load environment variables from the .env file
 load_dotenv()
@@ -178,74 +178,84 @@ def generate_response(user_id, user_input, model_choice):
         print(f"ERROR: {e}")
         return f"Sorry, an error occurred: {e}"
 
+async def process_command(message, parsed):
+    """Gestisce i comandi in base all'intent analizzato dal parser."""
+    if parsed["intent"] == "change_model":
+        global active_model
+        active_model = parsed["parameters"]["model"]
+        await message.channel.send(f"NoVa has switched to **{active_model.capitalize()}**!")
+
+    elif parsed["intent"] == "check_context":
+        user_id = message.author.id
+        history = conversation_history.get(user_id, ["No context available."])
+        formatted_history = "\n".join(f"- {msg}" for msg in history[-5:])
+        await message.channel.send(f"**Last conversation messages:**\n{formatted_history}")
+
+    elif parsed["intent"] == "generate_code":
+        language = parsed["parameters"]["language"]
+        code_response = generate_code(language)
+        if code_response:
+            formatted_code = f"```{language.lower()}\n{code_response}\n```"
+            await message.channel.send(formatted_code)
+        else:
+            await message.channel.send("❌ Language not supported. Try Python, C++, Java, or JavaScript.")
+
+    elif parsed["intent"] == "search_web":
+        query = parsed["parameters"]["query"]
+        await message.channel.send(f"🔍 Searching the web for: **{query}**...")
+        search_results = agent.run(f"web_search: {query}")
+        await message.channel.send(f"🌐 **Search Results:**\n{search_results}")
+
+    elif parsed["intent"] == "summarize_text":
+        text_to_summarize = parsed["parameters"]["text"]
+        summary = agent.run(f"text_summarizer: {text_to_summarize}")
+        await message.channel.send(f"📄 **Summary:**\n{summary}")
+
+    elif parsed["intent"] == "visit_webpage":
+        url = parsed["parameters"]["url"]
+        await message.channel.send(f"🌍 Visiting webpage: **{url}**...")
+        page_content = agent.run(f"visit_webpage: {url}")
+        await message.channel.send(f"📄 **Extracted Content:**\n{page_content[:2000]}")  
+
 @client.event
 async def on_ready():
     print(f'Bot {client.user} is online and connected to Discord!')
 
 @client.event
 async def on_message(message):
-    global active_model
-
+    """Gestisce i messaggi ricevuti e attiva il parsing dei comandi."""
     if message.author == client.user or message.author.bot:
         return
 
     content = re.sub(r'<@!?[0-9]+>', '', message.content).strip()
-
-    # Analyze the message with the parser
     parsed = parse_command(content)
 
-    if parsed["intent"] == "change_model":
-        active_model = parsed["parameters"]["model"]
-        await message.channel.send(f"NoVa has switched to **{active_model.capitalize()}**!")
+    # Se il parser ha riconosciuto un comando valido, lo esegue
+    if parsed["intent"] != "unknown":
+        await process_command(message, parsed)
         return
 
-    elif parsed["intent"] == "check_context":
-        user_id = message.author.id
-        history = conversation_history.get(user_id, ["No context available."])
+    # Se non è un comando, passa il messaggio al modello AI per la risposta
+    user_id = message.author.id
+    conversation_history.setdefault(user_id, []).append(content)
+    if len(conversation_history[user_id]) > 15:
+        conversation_history[user_id].pop(0)
 
-        if len(history) > 5:
-            history = history[-5:]  
+    context = "\n".join(conversation_history[user_id])
+    model_data = models[active_model]
+    prompt = f"User: {content}\nAssistant:"
 
-        formatted_history = "\n".join(f"- {msg}" for msg in history)
-        await message.channel.send(f"**Last conversation messages:**\n{formatted_history}")
-        return
-    
-    elif parsed["intent"] == "generate_code":
-        language = parsed["parameters"]["language"]
-        code_response = generate_code(language)
+    try:
+        response = model_data["client"].text_generation(
+            prompt, max_new_tokens=500, temperature=0.7, top_p=0.9
+        )
+        await message.channel.send(response.strip())
 
-        if code_response is None:
-            await message.channel.send("❌ Language not supported. Try Python, C++, Java or JavaScript.")
-        else:
-            formatted_code = f"```{language.lower()}\n{code_response}\n```"
-            await message.channel.send(formatted_code)  
-        return
-    
-    elif parsed["intent"] == "search_web":
-        query = parsed["parameters"]["query"]
-        await message.channel.send(f"🔍 Searching the web for: **{query}**...")
+    except Exception as e:
+        await message.channel.send(f"❌ Error generating response: {e}")
 
-        # Effettua la ricerca web
-        search_results = search_on_the_web(query)
-
-        # Formatta i risultati per Discord
-        if search_results.startswith("Error"):
-            await message.channel.send(f"❌ {search_results}")
-        else:
-            formatted_results = f"🌐 **Search Results for '{query}':**\n{search_results}"
-            await message.channel.send(formatted_results)
-        return
-    
-    print(f"[DEBUG] Received message: {message.content}")
-    bot_response = generate_response(message.author.id, message.content, active_model)
-
-    if bot_response:
-        await message.channel.send(bot_response)
-
+# Avvia il bot
 client.run(TOKEN)
-
-
-
 
 
 

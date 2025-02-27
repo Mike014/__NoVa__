@@ -10,10 +10,22 @@ def parse_command(user_input):
     """
     user_input = user_input.lower().strip()
 
-    # Recognize the search command
+    # Recognize the web search command
     if user_input.startswith("!search"):
         query = user_input.replace("!search", "").strip()
         return {"intent": "search_web", "parameters": {"query": query}}
+
+    # Recognize the text summarization command
+    match_summarize = re.search(r"(summarize|shorten|compress) (this|the following) text: (.+)", user_input)
+    if match_summarize:
+        text_to_summarize = match_summarize.group(3).strip()
+        return {"intent": "summarize_text", "parameters": {"text": text_to_summarize}}
+
+    # Recognize the visit webpage command
+    match_visit_webpage = re.search(r"(visit|open|analyze) webpage (.+)", user_input)
+    if match_visit_webpage:
+        url = match_visit_webpage.group(2).strip()
+        return {"intent": "visit_webpage", "parameters": {"url": url}}
 
     # Commands to change the model
     match_model = re.search(r"(use|switch to|change to)\s*(gemma|llama)", user_input)
@@ -45,6 +57,8 @@ def parse_command(user_input):
 if __name__ == "__main__":
     test_messages = [
         "!search Best AI frameworks in 2025",
+        "Summarize this text: Artificial intelligence is transforming the world by automating tasks.",
+        "Visit webpage https://huggingface.co",
         "Write code in Python",
         "Generate a function to add two numbers in C++",
         "Create Java code for a class",

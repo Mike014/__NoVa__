@@ -1,8 +1,4 @@
-Ecco il **README aggiornato**, includendo la nuova funzionalità di **ricerca sul web con SmolAgents**.  
-
----
-
-# **NoVa: The Digital Assistant of Michele Grimaldi**  
+# **NoVa: The Digital AI Assistant of Michele Grimaldi**  
 
 ![NoVa](Nova_pictures.PNG)  
 ![NoVa generate codes](NOVA_generate_code.PNG)  
@@ -10,13 +6,14 @@ Ecco il **README aggiornato**, includendo la nuova funzionalità di **ricerca su
 ![Search on Web](Search_on_Web.PNG)  
 
 ## **What is NoVa?**  
-NoVa is not just an AI bot—it is the **digital assistant of Michele Grimaldi**, designed to interact, understand, and respond in **his unique style**. NoVa is evolving into a true **AI Agent**, integrating **context awareness, memory, web search, and tool execution**.  
+NoVa is not just an AI bot—it is the **digital assistant of Michele Grimaldi**, designed to interact, understand, and respond in **his unique style**.  
+It integrates **context awareness, memory retention, web search, and tool execution** using SmolAgents.  
 
 ### **Key Capabilities:**  
 - **Mimics Michele’s tone**, humor, and expertise.  
-- **Engages in contextual conversations**, remembering past messages.  
-- **Executes tools** (AI functions) to interact beyond simple text.  
-- **Provides real-time assistance** in AI, software development, and game audio.  
+- **Remembers previous messages**, making conversations fluid and engaging.  
+- **Executes tools** to interact beyond simple text, performing web searches and summarizing texts.  
+- **Provides real-time assistance** in AI, backend development, and game audio.  
 - **Performs live web searches using SmolAgents.**  
 
 ---
@@ -60,7 +57,8 @@ This makes NoVa feel **more human-like and engaging**.
 ---
 
 ### **3️⃣ Web Search Capability**  
-NoVa can now **search the web in real-time** using **SmolAgents** and the **DuckDuckGo API**. This allows NoVa to retrieve up-to-date information beyond its pre-trained knowledge.
+NoVa can now **search the web in real-time** using **SmolAgents** and the **DuckDuckGo API**.  
+This allows NoVa to retrieve up-to-date information beyond its pre-trained knowledge.
 
 #### **Example of Web Search Command on Discord:**  
 ```
@@ -76,7 +74,26 @@ This feature significantly **expands NoVa's real-time knowledge** for research, 
 
 ---
 
-### **4️⃣ AI Model & Language Generation**  
+### **4️⃣ Tool Execution & AI Model**  
+NoVa now integrates **SmolAgents tools** to execute tasks beyond text generation.  
+
+#### **Supported Tools:**
+✔ **SummarizeTextTool** → Summarizes a given text.  
+✔ **SearchWebTool** → Performs web searches using DuckDuckGo.  
+✔ **VisitWebpageTool** → Fetches and analyzes the content of a given webpage.  
+
+#### **Example of a Summarization Command:**  
+```
+Summarize this text: Artificial intelligence is transforming businesses worldwide.
+```
+Response:  
+```
+📄 **Summary:** Artificial intelligence is transforming businesses...
+```
+
+---
+
+### **5️⃣ AI Model & Language Generation**  
 NoVa is powered by **Llama-3.2-3B-Instruct** and **Gemma-2-2B**, ensuring:  
 - High-quality text generation.  
 - Strong conversational abilities.  
@@ -94,6 +111,11 @@ NoVa is powered by **Llama-3.2-3B-Instruct** and **Gemma-2-2B**, ensuring:
 ## **🔹 Recent Improvements & Fixes**  
 As part of the ongoing development, we have made several enhancements:  
 
+### **✔ SmolAgents Integration**
+- **Enabled NoVa to execute external tools for live information retrieval.**  
+- **Improved web search and summarization accuracy.**  
+- **Reduced latency in API responses with optimized tool execution.**  
+
 ### **✔ Improved Code Generation**
 - **Fixed Markdown formatting for generated code blocks.**  
 - **Ensured NoVa returns only the correct language without extra text.**  
@@ -104,21 +126,21 @@ As part of the ongoing development, we have made several enhancements:
 - **Limited the number of stored messages to avoid flooding responses.**  
 - **Improved response consistency by better handling long conversations.**  
 
-### **✔ Integrated Real-Time Web Search**
-- **Enabled NoVa to search for real-time information via SmolAgents.**  
-- **Added intent recognition for `!search` commands.**  
-- **Formatted search results for better readability.**  
+### **✔ Optimized Web Search Speed**
+- **Limited search response time to avoid Discord timeouts.**  
+- **Implemented a fallback mechanism in case of request failures.**  
+- **Better response structuring for search results.**  
 
 ---
 
-## **5️⃣ Future Evolution: NoVa as a True AI Agent**  
-NoVa is being developed into a **fully functional AI Agent**, capable of **executing real-world tasks** through external tools.  
+## **6️⃣ Future Evolution: NoVa as a True AI Agent**  
+NoVa is evolving into a **fully functional AI Agent**, capable of **executing real-world tasks** through external tools.  
 
 ### **Planned Features:**  
-✔ **Tool Execution:** Ability to call external APIs, fetch data, and execute functions.  
+✔ **Tool Execution:** Ability to call external APIs, fetch data, and execute functions. *(Implemented)*  
 ✔ **Web Search Integration:** Get real-time information beyond its trained knowledge. *(Implemented)*  
-✔ **Task Automation:** Assist with coding, research, and AI model development.  
-✔ **Multi-Platform Presence:** Expand beyond Discord to Telegram, web, and mobile.  
+✔ **Task Automation:** Assist with coding, research, and AI model development. *(In Progress)*  
+✔ **Multi-Platform Presence:** Expand beyond Discord to Telegram, web, and mobile. *(Planned)*  
 
 ---
 
@@ -131,4 +153,6 @@ The roadmap is set for NoVa’s expansion, transforming it from a **smart assist
 
 With continuous refinements, NoVa will soon be able to **handle advanced tasks, research, and development autonomously**.  
 
-**NoVa is not just an AI—it’s the evolution of how Michele interacts with the digital world.** 🚀
+**NoVa is not just an AI—it’s the evolution of how Michele interacts with the digital world.**  
+```  
+
