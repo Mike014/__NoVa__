@@ -1,6 +1,8 @@
 # **NoVa: The Digital Assistant of Michele Grimaldi**
 
 ![NoVa](Nova_pictures.PNG)
+![NoVa generate codes](NOVA_generate_code.PNG)
+![NoVa remind the conversation](Nova_remind_conversation.PNG)
 
 ## **What is NoVa?**
 NoVa is not just an AI bot—it's the **digital assistant of Michele Grimaldi**, designed to interact, understand, and respond in **his unique style**. NoVa is evolving into a true **AI Agent**, integrating **context awareness, memory, and tool execution**.
