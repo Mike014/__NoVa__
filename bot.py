@@ -29,13 +29,13 @@ models = {
         "tokenizer": AutoTokenizer.from_pretrained("meta-llama/Llama-3.2-3B-Instruct")
     },
     "gemma": {
-        "client": InferenceClient(model="google/gemma-2-2b-it", token=API_KEY),
-        "tokenizer": AutoTokenizer.from_pretrained("google/gemma-2-2b-it")
+        "client": InferenceClient(model="google/gemma-2b-it", token=API_KEY),
+        "tokenizer": AutoTokenizer.from_pretrained("google/gemma-2b-it")
     }
 }
 
 # Active model (default: LLaMA)
-active_model = "gemma"
+active_model = "llama"
 
 # System prompt for NoVa
 system_prompt = """<|begin_of_text|><|start_header_id|>system<|end_header_id|>
@@ -63,6 +63,7 @@ Context Awareness:
 - If you don’t know something, respond with curiosity instead of making things up.
 <|eot_id|><|start_header_id|>user<|end_header_id|>
 """
+
 def generate_code(language):
     """
     Generates well-formatted code based on the requested language.
@@ -71,7 +72,6 @@ def generate_code(language):
         "python": """
 print("Hello, World!")
 """,
-
         "c++": """
 #include <iostream>
 
@@ -80,7 +80,6 @@ int main() {
     return 0;
 }
 """,
-
         "java": """
 public class Main {
     public static void main(String[] args) {
@@ -88,7 +87,6 @@ public class Main {
     }
 }
 """,
-
         "javascript": """
 console.log("Hello, World!");
 """
@@ -152,8 +150,8 @@ def generate_response(user_id, user_input, model_choice):
             response = tokenizer.decode(output["input_ids"].tolist()[0], skip_special_tokens=True).strip()
 
         # Remove ONLY extra tokens, without altering Markdown
-        response = re.sub(r"</?\|?eot_id\|?>", "", response)  # Removes `</|eot_id|>`
-        response = re.sub(r"</?\|?start_header_id\|?>", "", response)  # Removes `<|start_header_id|>`
+        response = re.sub(r"</?\|?eot_id\|?>", "", response) 
+        response = re.sub(r"</?\|?start_header_id\|?>", "", response)  
         response = re.sub(r"<\|end_header_id\|>", "", response)
         response = re.sub(r"\[INST\]", "", response)
         response = re.sub(r"<s>", "", response)
@@ -168,42 +166,75 @@ def generate_response(user_id, user_input, model_choice):
         if match:
             response = match.group(0)  
             
+        if not response or response.isspace():
+            print("[ERROR] AI Response is empty. Using fallback response.")
+            response = "Something went wrong. Try again later."
+
         print(f"[DEBUG] AI Response: {response}")
+
         response_chunks = [response[i:i+2000] for i in range(0, len(response), 2000)]
-        response_chunks = re.sub(r"[\[\]]", "", response)
+        
+        if not response_chunks:  
+            response_chunks = ["Something went wrong. Try again later."]
+        
         print(f"[DEBUG] AI Response: {response_chunks}")
         return response_chunks
 
     except Exception as e:
         print(f"ERROR: {e}")
-        return f"Sorry, an error occurred: {e}"
+        return [f"Sorry, an error occurred: {e}"]
 
-async def process_command(message, parsed):
-    """Gestisce i comandi in base all'intent analizzato dal parser."""
+@client.event
+async def on_ready():
+    print(f'Bot {client.user} is online and connected to Discord!')
+
+@client.event
+async def on_message(message):
+    global active_model
+
+    if message.author == client.user or message.author.bot:
+        return
+
+    content = re.sub(r'<@!?[0-9]+>', '', message.content).strip()
+
+    # Analyze the message with the parser
+    parsed = parse_command(content)
+
     if parsed["intent"] == "change_model":
-        global active_model
         active_model = parsed["parameters"]["model"]
         await message.channel.send(f"NoVa has switched to **{active_model.capitalize()}**!")
+        return
 
     elif parsed["intent"] == "check_context":
         user_id = message.author.id
         history = conversation_history.get(user_id, ["No context available."])
-        formatted_history = "\n".join(f"- {msg}" for msg in history[-5:])
+
+        if len(history) > 5:
+            history = history[-5:]
+
+        formatted_history = "\n".join(f"- {msg}" for msg in history)
         await message.channel.send(f"**Last conversation messages:**\n{formatted_history}")
+        return
 
     elif parsed["intent"] == "generate_code":
         language = parsed["parameters"]["language"]
         code_response = generate_code(language)
-        if code_response:
+
+        if code_response is None:
+            await message.channel.send("❌ Language not supported. Try Python, C++, Java or JavaScript.")
+        else:
             formatted_code = f"```{language.lower()}\n{code_response}\n```"
             await message.channel.send(formatted_code)
-        else:
-            await message.channel.send("❌ Language not supported. Try Python, C++, Java, or JavaScript.")
+        return
 
     elif parsed["intent"] == "search_web":
         query = parsed["parameters"]["query"]
         await message.channel.send(f"🔍 Searching the web for: **{query}**...")
-        search_results = agent.run(f"web_search: {query}")
+        try:
+            search_results = agent.run(f"web_search: {query}")
+            search_results = search_results if search_results else "No results found."
+        except Exception as e:
+            search_results = f"Error: {e}"
         await message.channel.send(f"🌐 **Search Results:**\n{search_results}")
 
     elif parsed["intent"] == "summarize_text":
@@ -215,48 +246,22 @@ async def process_command(message, parsed):
         url = parsed["parameters"]["url"]
         await message.channel.send(f"🌍 Visiting webpage: **{url}**...")
         page_content = agent.run(f"visit_webpage: {url}")
-        await message.channel.send(f"📄 **Extracted Content:**\n{page_content[:2000]}")  
+        await message.channel.send(f"📄 **Extracted Content:**\n{page_content[:2000]}")
 
-@client.event
-async def on_ready():
-    print(f'Bot {client.user} is online and connected to Discord!')
+    print(f"[DEBUG] Received message: {message.content}")
+    bot_response = generate_response(message.author.id, message.content, active_model)
 
-@client.event
-async def on_message(message):
-    """Gestisce i messaggi ricevuti e attiva il parsing dei comandi."""
-    if message.author == client.user or message.author.bot:
-        return
+    if bot_response:
+        for chunk in bot_response:
+            await message.channel.send(chunk)
 
-    content = re.sub(r'<@!?[0-9]+>', '', message.content).strip()
-    parsed = parse_command(content)
-
-    # Se il parser ha riconosciuto un comando valido, lo esegue
-    if parsed["intent"] != "unknown":
-        await process_command(message, parsed)
-        return
-
-    # Se non è un comando, passa il messaggio al modello AI per la risposta
-    user_id = message.author.id
-    conversation_history.setdefault(user_id, []).append(content)
-    if len(conversation_history[user_id]) > 15:
-        conversation_history[user_id].pop(0)
-
-    context = "\n".join(conversation_history[user_id])
-    model_data = models[active_model]
-    prompt = f"User: {content}\nAssistant:"
-
-    try:
-        response = model_data["client"].text_generation(
-            prompt, max_new_tokens=500, temperature=0.7, top_p=0.9
-        )
-        await message.channel.send(response.strip())
-
-    except Exception as e:
-        await message.channel.send(f"❌ Error generating response: {e}")
-
-# Avvia il bot
 client.run(TOKEN)
 
+# !search [query]  Search for information on the web using DuckDuckGo.
+# Summarize this text: [text]  Summarize the provided text.
+# Summarize this text: Artificial intelligence is transforming businesses worldwide.
+# Visit webpage [URL]  Visit and analyze a webpage.
+# Visit webpage https://huggingface.co/
 
 
 
@@ -288,25 +293,11 @@ client.run(TOKEN)
 
 
 
-# # Remove system tokens
-#         response = re.sub(r"</?\|?eot_id\|?>", "", response)
-#         response = re.sub(r"</?\|?start_header_id\|?>", "", response)
-#         response = re.sub(r"<\|end_header_id\|>", "", response)
-#         response = re.sub(r"\[INST\]", "", response)
-#         response = re.sub(r"<s>", "", response)
-#         response = re.sub(r"<<SYS>>", "", response)
-#         response = re.sub(r"<</SYS>>", "", response)
 
-#         response = re.sub(r"<\|user\|>", "", response)
-#         response = re.sub(r"<\|.*?\|>", "", response) 
-        
-#         # Remove unwanted HTML characters
-#         response = re.sub(r"</?[a-zA-Z]+>", "", response)  
 
-#         # Remove extra spaces
-#         response = re.sub(r"\s+", " ", response).strip()
 
-#         print(f"[DEBUG] AI Response: {response}")
-#         response_chunks = [response[i:i+2000] for i in range(0, len(response), 2000)]
-#         response_chunks = re.sub(r"[\[\]]", "", response)
-#         return response_chunks
+
+
+
+
+
