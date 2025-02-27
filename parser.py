@@ -10,6 +10,11 @@ def parse_command(user_input):
     """
     user_input = user_input.lower().strip()
 
+    # Recognize the search command
+    if user_input.startswith("!search"):
+        query = user_input.replace("!search", "").strip()
+        return {"intent": "search_web", "parameters": {"query": query}}
+
     # Commands to change the model
     match_model = re.search(r"(use|switch to|change to)\s*(gemma|llama)", user_input)
     if match_model:
@@ -39,6 +44,7 @@ def parse_command(user_input):
 # Local test of the parser
 if __name__ == "__main__":
     test_messages = [
+        "!search Best AI frameworks in 2025",
         "Write code in Python",
         "Generate a function to add two numbers in C++",
         "Create Java code for a class",
@@ -46,5 +52,3 @@ if __name__ == "__main__":
     ]
     for msg in test_messages:
         print(f"User: {msg} -> Parsed: {parse_command(msg)}")
-
-

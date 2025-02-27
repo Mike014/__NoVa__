@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from huggingface_hub import InferenceClient
 from transformers import AutoTokenizer
 from parser import parse_command
+from smolagents_NoVa_ import search_on_the_web
 
 # Load environment variables from the .env file
 load_dotenv()
@@ -217,7 +218,22 @@ async def on_message(message):
             await message.channel.send("❌ Language not supported. Try Python, C++, Java or JavaScript.")
         else:
             formatted_code = f"```{language.lower()}\n{code_response}\n```"
-            await message.channel.send(formatted_code)  # Send the formatted code directly
+            await message.channel.send(formatted_code)  
+        return
+    
+    elif parsed["intent"] == "search_web":
+        query = parsed["parameters"]["query"]
+        await message.channel.send(f"🔍 Searching the web for: **{query}**...")
+
+        # Effettua la ricerca web
+        search_results = search_on_the_web(query)
+
+        # Formatta i risultati per Discord
+        if search_results.startswith("Error"):
+            await message.channel.send(f"❌ {search_results}")
+        else:
+            formatted_results = f"🌐 **Search Results for '{query}':**\n{search_results}"
+            await message.channel.send(formatted_results)
         return
     
     print(f"[DEBUG] Received message: {message.content}")
@@ -227,6 +243,35 @@ async def on_message(message):
         await message.channel.send(bot_response)
 
 client.run(TOKEN)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
