@@ -4,7 +4,7 @@ import re
 import requests
 from dotenv import load_dotenv
 from huggingface_hub import InferenceClient
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, AutoModelForCausalLM
 from parser import parse_command
 from smolagents_NoVa_ import SearchWebTool, SummarizeTextTool, VisitWebpageToolCustom, agent
 
@@ -31,11 +31,16 @@ models = {
     "gemma": {
         "client": InferenceClient(model="google/gemma-2b-it", token=API_KEY),
         "tokenizer": AutoTokenizer.from_pretrained("google/gemma-2b-it")
+    },
+    "mistral": {
+        "client": InferenceClient(model="mistralai/Mixtral-8x7B-Instruct-v0.1", token=API_KEY),
+        "tokenizer": AutoTokenizer.from_pretrained("mistralai/Mixtral-8x7B-Instruct-v0.1")
     }
 }
 
+
 # Active model (default: LLaMA)
-active_model = "llama"
+active_model = "gemma"
 
 # System prompt for NoVa
 system_prompt = """<|begin_of_text|><|start_header_id|>system<|end_header_id|>
@@ -262,42 +267,3 @@ client.run(TOKEN)
 # Summarize this text: Artificial intelligence is transforming businesses worldwide.
 # Visit webpage [URL]  Visit and analyze a webpage.
 # Visit webpage https://huggingface.co/
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

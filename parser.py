@@ -28,7 +28,7 @@ def parse_command(user_input):
         return {"intent": "visit_webpage", "parameters": {"url": url}}
 
     # Commands to change the model
-    match_model = re.search(r"(use|switch to|change to)\s*(gemma|llama)", user_input)
+    match_model = re.search(r"(use|switch to|change to)\s*(gemma|llama|mistral)", user_input)
     if match_model:
         return {"intent": "change_model", "parameters": {"model": match_model.group(2)}}
 
@@ -37,7 +37,7 @@ def parse_command(user_input):
     if match_context:
         return {"intent": "check_context", "parameters": {}}
 
-    # Time recognition
+    # Time recognitionuse
     if "what time is it" in user_input or "tell me the time" in user_input:
         return {"intent": "get_time", "parameters": {}}
 
