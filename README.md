@@ -94,7 +94,7 @@ Response:
 ---
 
 ### **5️⃣ AI Model & Language Generation**  
-NoVa is powered by **Llama-3.2-3B-Instruct** and **Gemma-2-2B**, ensuring:  
+NoVa is powered by **Llama-3.2-3B-Instruct** and **Gemma-2-2B**, **Mixtral-8x7B-Instruct-v0.1** ensuring:  
 - High-quality text generation.  
 - Strong conversational abilities.  
 - A mix of logic and humor in responses.  
