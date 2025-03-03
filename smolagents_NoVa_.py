@@ -70,8 +70,11 @@ summarize_tool = SummarizeTextTool()
 search_tool = SearchWebTool()
 visit_webpage_tool = VisitWebpageToolCustom()
 
+model = HfApiModel("Qwen/Qwen2.5-Coder-32B-Instruct", provider="together")
+
+
 # Create an agent with all tools
-agent = CodeAgent(tools=[summarize_tool, search_tool, visit_webpage_tool], model=HfApiModel())
+agent = CodeAgent(tools=[summarize_tool, search_tool, visit_webpage_tool], model=model)
 
 def main():
     # # Example of a web search

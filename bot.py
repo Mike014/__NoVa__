@@ -129,8 +129,11 @@ def generate_response(user_id, user_input, model_choice):
     # Format the prompt
     if model_choice == "gemma":
         prompt = f"{system_prompt}\nPrevious conversation:\n{context}\n\nUser: {cleaned_input}\nAssistant:"
-    else:
+    elif model_choice == "llama":
         prompt = f"<s><<SYS>>{system_prompt}<</SYS>>\nPrevious conversation:\n{context}\n\n[INST] {cleaned_input} [/INST]\nAssistant:"
+    elif model_choice == "mistral":
+        prompt = f"<s>[INST] {system_prompt}\nPrevious conversation:\n{context}\n{cleaned_input} [/INST]"
+    
 
     # Tokenize the prompt
     inputs = tokenizer(prompt, return_tensors="pt")
