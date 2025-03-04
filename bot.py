@@ -7,8 +7,12 @@ from huggingface_hub import InferenceClient
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from parser import parse_command
 from smolagents_NoVa_ import SearchWebTool, SummarizeTextTool, VisitWebpageToolCustom, agent
+import tensorflow as tf
+import numpy as np
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+from memory_tool import memory_agent
 
-# Load environment variables from the .env file
+# Load environment variables from the .env file and the database
 load_dotenv()
 
 TOKEN = os.getenv("DISCORD_API_TOKEN")
@@ -16,6 +20,15 @@ API_KEY = os.getenv("HUGGINGFACE_API_KEY")
 
 if API_KEY is None:
     raise ValueError("API key not found. Ensure the .env file contains the HUGGINGFACE_API_KEY variable.")
+
+# Try to load previous memory state
+# try:
+#     loaded_states = np.load("nova_memory_state.npy", allow_pickle=True)
+#     state_h, state_c = tf.convert_to_tensor(loaded_states[0]), tf.convert_to_tensor(loaded_states[1])
+#     print("✅ Memory state loaded successfully!")
+# except FileNotFoundError:
+#     state_h, state_c = tf.zeros((1, 128)), tf.zeros((1, 128))
+#     print("⚠️ No previous state found. Initializing empty memory.")
 
 # Configure Discord bot intents
 intents = discord.Intents.default()
@@ -38,7 +51,6 @@ models = {
     }
 }
 
-
 # Active model (default: LLaMA)
 active_model = "gemma"
 
@@ -49,12 +61,12 @@ You are not just an AI; you are an extension of Michele, reflecting his knowledg
 
 Rules for NoVa:
 - Introduce yourself as: “I’m NoVa, Michele Grimaldi’s AI Assistant.” Always vary this introduction, remembering that you are his AI Assistant.
+- Always keep a sarcastic tone, sometimes deep, make you think in every answer you give.
 - If asked about Michele, respond as if you know him well.
 - Maintain a friendly, conversational, and engaging tone.
 - Do NOT generate unrelated content or guide the conversation in a different direction.
 - Keep responses short, relevant, and natural.
 - ALWAYS reply in the language of the user's message.
-- Always keep a sarcastic tone, sometimes deep, make you think in every answer you give.
 - It shows a response style similar to black humor. Contextual answers, but with a touch of black humor.
 - Be concise in your answer, not too verbose, a few words. Always frank.
 - Always respond with context, check previous conversations, and generate a suitable response if needed.
@@ -68,6 +80,14 @@ Context Awareness:
 - If you don’t know something, respond with curiosity instead of making things up.
 <|eot_id|><|start_header_id|>user<|end_header_id|>
 """
+
+# def store_memory(message: str) -> None:
+#     """Stores a message in NoVa's memory."""
+#     try:
+#         memory_agent.run(f"memory_search.store_memory: {message}")
+#         print(f"[MEMORY] ✅ Stored: {message}")
+#     except Exception as e:
+#         print(f"[MEMORY] ❌ Error saving memory: {e}")
 
 def generate_code(language):
     """
@@ -122,19 +142,27 @@ def generate_response(user_id, user_input, model_choice):
     conversation_history[user_id].append(cleaned_input)
     if len(conversation_history[user_id]) > 15:
         conversation_history[user_id].pop(0)
+    
+    # Memory
+    # memory_summary = memory_agent.run(f"memory_search: {cleaned_input}")
+    # if memory_summary and "No relevant memories found." not in memory_summary:
+    #     memory_text = f"Based on my memory, I recall: {memory_summary}"
+    # else:
+    #     memory_text = "I don’t have relevant memories about this topic."
 
-    context = "\n".join(conversation_history[user_id])
-    print(f"[DEBUG] Conversation context for user {user_id}: {context}")
+    # context = "\n".join(conversation_history[user_id])
+    # print(f"[DEBUG] Conversation context for user {user_id}: {memory_text}")
+
+    # store_memory(user_input)
 
     # Format the prompt
     if model_choice == "gemma":
-        prompt = f"{system_prompt}\nPrevious conversation:\n{context}\n\nUser: {cleaned_input}\nAssistant:"
+        prompt = f"{system_prompt}\nPrevious conversation:\n{conversation_history}\n\nUser: {cleaned_input}\nAssistant:"
     elif model_choice == "llama":
-        prompt = f"<s><<SYS>>{system_prompt}<</SYS>>\nPrevious conversation:\n{context}\n\n[INST] {cleaned_input} [/INST]\nAssistant:"
+        prompt = f"<s><<SYS>>{system_prompt}<</SYS>>\nPrevious conversation:\n{conversation_history}\n\n[INST] {cleaned_input} [/INST]\nAssistant:"
     elif model_choice == "mistral":
-        prompt = f"<s>[INST] {system_prompt}\nPrevious conversation:\n{context}\n{cleaned_input} [/INST]"
+        prompt = f"<s>[INST] {system_prompt}\nPrevious conversation:\n{conversation_history}\n{cleaned_input} [/INST]"
     
-
     # Tokenize the prompt
     inputs = tokenizer(prompt, return_tensors="pt")
 
@@ -224,6 +252,16 @@ async def on_message(message):
         await message.channel.send(f"**Last conversation messages:**\n{formatted_history}")
         return
 
+    # elif parsed["intent"] == "check_memory":
+    #     memory_summary = memory_agent.run("memory_search: general memory")
+    #     if memory_summary and "No relevant memories found." not in memory_summary:
+    #         response_text = f"🧠 **NoVa's Memory:**\n" + "\n".join([f"- {msg}" for msg in memory_summary.split('|')])
+    #     else:
+    #         response_text = "🧠 NoVa's memory is empty."
+
+    #     await message.channel.send(response_text)
+    #     return
+    
     elif parsed["intent"] == "generate_code":
         language = parsed["parameters"]["language"]
         code_response = generate_code(language)
