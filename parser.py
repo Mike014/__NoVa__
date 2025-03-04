@@ -33,10 +33,12 @@ def parse_command(user_input):
         return {"intent": "change_model", "parameters": {"model": match_model.group(2)}}
 
     # Commands to check the context (e.g., "What did we say before?")
-    match_context = re.search(r"(what did we say|do you remember.*\?)", user_input)
-    if match_context:
-        return {"intent": "check_context", "parameters": {}}
-
+    # match_context = re.search(r"(what did we say|do you remember.*\?)", user_input)
+    # if match_context:
+    #     return {"intent": "check_context", "parameters": {}}
+    if user_input.lower() in ["check memory", "what do you remember?", "recall memory"]:
+        return {"intent": "check_memory", "parameters": {}}
+    
     # Time recognitionuse
     if "what time is it" in user_input or "tell me the time" in user_input:
         return {"intent": "get_time", "parameters": {}}
