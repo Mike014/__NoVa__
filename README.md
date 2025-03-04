@@ -54,6 +54,21 @@ NoVa: "Another fallen soldier in the battle against cravings. RIP self-disciplin
 ```
 This makes NoVa feel **more human-like and engaging**.  
 
+- **LAST UPDATES**
+A file called **memory_tool.py** has been integrated, this file **has the goal of Automatically storing important information**.
+#### **Use a simple database, in this case sqlite.**
+**Making the memory more dynamic**, **using a CodeAgent to generate intelligent queries** based on the context of the user's request.
+Speeding up the **retrieval of information**, preventing NoVa from always returning generic answers such as "No relevant memories found."
+**Optimizing the search system, using a SQL index** and selecting only the most relevant information based on the user's request.
+
+**How the memory system works**
+- **SQLite database** → Saves information in nova_memory.db with user_id, timestamp and message.
+- **store_memory() function** → Saves a new message for NoVa to remember.
+- **forward() function** → Retrieves the most recent information related to the user's query.
+- **Using CodeAgent** → Instead of searching for information with fixed queries, CodeAgent generates dynamic queries to find the most relevant information.
+
+**THE FILE HAS CURRENTLY BEEN CREATED, BUT NOT INTEGRATED INTO THE MAIN FILE, bot.py.**
+
 ---
 
 ### **3️⃣ Web Search Capability**  
