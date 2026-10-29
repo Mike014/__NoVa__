@@ -1,15 +1,15 @@
 # **NoVa: The Digital AI Assistant of Michele Grimaldi**  
 
 <p align="center">
-  <img src="NOVA_generate_code.PNG" alt="NoVa Generate Code" width="250">
-  <img src="Nova_remind_conversation.PNG" alt="NoVa Remind Conversation" width="250">
-  <img src="memory_of_nova(STILL_WORK_IN_PROGRESS).PNG" alt="NoVa memory" width="550">
-  <img src="Search_on_Web.PNG" alt="NoVa Web Search" width="250">
+  <img src="assets/NOVA_generate_code.PNG" alt="NoVa Generate Code" width="250">
+  <img src="assets/Nova_remind_conversation.PNG" alt="NoVa Remind Conversation" width="250">
+  <img src="assets/memory_of_nova(STILL_WORK_IN_PROGRESS).PNG" alt="NoVa memory" width="550">
+  <img src="assets/Search_on_Web.PNG" alt="NoVa Web Search" width="250">
 </p>
 
-<!-- ![NoVa remind the conversation](Nova_remind_conversation.PNG)  
-![NoVa memory](memory_of_nova(STILL_WORK_IN_PROGRESS).PNG)  
-![Search on Web](Search_on_Web.PNG)   -->
+<!-- ![NoVa remind the conversation](assets/Nova_remind_conversation.PNG)  
+![NoVa memory](assets/memory_of_nova(STILL_WORK_IN_PROGRESS).PNG)  
+![Search on Web](assets/Search_on_Web.PNG)   -->
 
 ## **What is NoVa?**  
 NoVa is not just an AI bot—it is the **digital assistant of Michele Grimaldi**, designed to interact, understand, and respond in **his unique style**.  
@@ -73,7 +73,17 @@ Speeding up the **retrieval of information**, preventing NoVa from always return
 - **forward() function** → Retrieves the most recent information related to the user's query.
 - **Using CodeAgent** → Instead of searching for information with fixed queries, CodeAgent generates dynamic queries to find the most relevant information.
 
-**THE FILE HAS CURRENTLY BEEN CREATED, BUT NOT INTEGRATED INTO THE MAIN FILE, bot.py.**
+**THE FILE HAS CURRENTLY BEEN CREATED, BUT NOT INTEGRATED INTO THE MAIN FILE, src/bot.py.**
+
+#### **Chat memory (channel_memory.py) — integrated**
+NoVa now reads the whole Discord chat and keeps a **persistent archive** of it in `nova_chat_memory.db` (SQLite, never committed).
+- **Archives everything she can read**: every new message is saved; edits and deletions are applied to the archive.
+- **History sync on startup**: NoVa reads the past messages of every text channel she can see (up to `NOVA_BACKFILL_LIMIT`, default 2000 per channel) and on later restarts only fetches what is new.
+- **Channel context**: each reply sees the last `NOVA_CONTEXT_MESSAGES` (default 20) messages of the channel, from everyone, with their names. It survives restarts.
+- **Recall**: when a message asks about the past (*"ti ricordi…"*, *"quella volta che…"*, *"remember when…"*), NoVa runs a full-text search (SQLite FTS5) over the whole server, takes the best matches with the messages around them, and answers with **when** and **who**. If nothing matches, she says so instead of inventing.
+- **Replies only when called**: NoVa reads every message but answers only DMs, mentions, replies to her messages and `!` commands.
+
+The bot needs the **Message Content Intent** and the **Read Message History** permission.
 
 ---
 
@@ -115,7 +125,7 @@ Response:
 ---
 
 ### **5️⃣ AI Model & Language Generation**  
-NoVa is powered by **Llama-3.2-3B-Instruct** and **Gemma-2-2B**, **Mixtral-8x7B-Instruct-v0.1** ensuring:  
+NoVa runs entirely on local models served by **[Ollama](https://ollama.com)** (no paid API keys): **Llama 3.2 3B** (default), **Gemma 2 2B** and **Mistral 7B** for chat, and **Qwen2.5-Coder 7B** for the SmolAgents tools, ensuring:  
 - High-quality text generation.  
 - Strong conversational abilities.  
 - A mix of logic and humor in responses.  
@@ -126,6 +136,32 @@ NoVa is powered by **Llama-3.2-3B-Instruct** and **Gemma-2-2B**, **Mixtral-8x7B-
 3. **It builds a structured prompt** with the system personality.  
 4. **The AI generates a witty, context-aware response.**  
 5. **The response is sent back to the user.**  
+
+#### **Running NoVa locally**
+Double-click `setup.bat` to install the Python environment, Ollama and the models, then `avvia.bat` to start the bot. The same steps by hand:
+
+1. Install [Ollama](https://ollama.com/download) and pull the models:
+   ```
+   ollama pull gemma2:2b
+   ollama pull llama3.2:3b
+   ollama pull mistral:7b
+   ollama pull qwen2.5-coder:7b
+   ```
+2. Install the Python dependencies:
+   ```
+   pip install discord.py python-dotenv requests "smolagents[openai]" duckduckgo-search markdownify spacy numpy tensorflow
+   python -m spacy download en_core_web_sm
+   ```
+3. Create a `.env` file:
+   ```
+   DISCORD_API_TOKEN=your_discord_bot_token
+   # Optional, these are the defaults
+   OLLAMA_HOST=http://localhost:11434
+   OLLAMA_AGENT_MODEL=qwen2.5-coder:7b
+   ```
+4. With Ollama running, start the bot: `python src/bot.py` (or double-click `avvia.bat`)
+
+Switch the chat model from Discord by mentioning NoVa: `@NoVa switch to gemma`, `switch to llama` or `switch to mistral`.
 
 ---
 

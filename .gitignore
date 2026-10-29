@@ -2,3 +2,10 @@
 .env
 
 __pycache__
+.venv
+setup.log
+
+# Local memory databases (contain Discord messages)
+*.db
+*.db-wal
+*.db-shm

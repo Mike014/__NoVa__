@@ -1,4 +1,7 @@
-from smolagents import Tool, CodeAgent, DuckDuckGoSearchTool, VisitWebpageTool, HfApiModel
+from smolagents import Tool, CodeAgent, DuckDuckGoSearchTool, VisitWebpageTool
+from ollama_client import agent_model
+
+model = agent_model()
 
 class SummarizeTextTool(Tool):
     """
@@ -38,7 +41,7 @@ class SearchWebTool(Tool):
     output_type = "string"
 
     def forward(self, query: str) -> str:
-        agent = CodeAgent(tools=[DuckDuckGoSearchTool()], model=HfApiModel())
+        agent = CodeAgent(tools=[DuckDuckGoSearchTool()], model=model)
         result = agent.run(query)
         return "\n".join(result) if isinstance(result, list) else result.strip()
 
@@ -60,7 +63,7 @@ class VisitWebpageToolCustom(Tool):
     output_type = "string"
 
     def forward(self, url: str) -> str:
-        agent = CodeAgent(tools=[VisitWebpageTool()], model=HfApiModel())
+        agent = CodeAgent(tools=[VisitWebpageTool()], model=model)
         result = agent.run(url)
         return result if isinstance(result, str) else "No content retrieved."
 
@@ -69,9 +72,6 @@ class VisitWebpageToolCustom(Tool):
 summarize_tool = SummarizeTextTool()
 search_tool = SearchWebTool()
 visit_webpage_tool = VisitWebpageToolCustom()
-
-model = HfApiModel("Qwen/Qwen2.5-Coder-32B-Instruct", provider="together")
-
 
 # Create an agent with all tools
 agent = CodeAgent(tools=[summarize_tool, search_tool, visit_webpage_tool], model=model)

@@ -1,21 +1,16 @@
 import sqlite3
-import os
 import logging
-from smolagents import Tool, CodeAgent, HfApiModel
-from huggingface_hub import InferenceClient
+from smolagents import Tool, CodeAgent
+from ollama_client import agent_model
 
 # Configuration
-API_KEY = os.getenv("HUGGINGFACE_API_KEY")
 DB_FILE = "nova_memory.db"
 
 # Logging setup
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-# Initialize Hugging Face model
-llm_client = HfApiModel(
-    model="mistralai/Mixtral-8x7B-Instruct-v0.1",
-    token=API_KEY
-)
+# Initialize the local Ollama model
+llm_client = agent_model()
 
 class MemorySearchTool(Tool):
     """Tool for managing NoVa's memory."""

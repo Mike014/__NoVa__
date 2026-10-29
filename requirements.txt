@@ -1,0 +1,9 @@
+discord.py
+python-dotenv
+requests
+smolagents[openai]
+duckduckgo-search
+markdownify
+spacy
+numpy
+tensorflow

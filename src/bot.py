@@ -1,25 +1,25 @@
+import asyncio
 import discord
 import os
 import re
 import requests
 from dotenv import load_dotenv
-from huggingface_hub import InferenceClient
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from ollama_client import chat
 from parser import parse_command
 from smolagents_NoVa_ import SearchWebTool, SummarizeTextTool, VisitWebpageToolCustom, agent
 import tensorflow as tf
 import numpy as np
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 from memory_tool import memory_agent
+from channel_memory import ChatMemory, format_snippets, is_recall_request, shorten, to_record
 
 # Load environment variables from the .env file and the database
 load_dotenv()
 
 TOKEN = os.getenv("DISCORD_API_TOKEN")
-API_KEY = os.getenv("HUGGINGFACE_API_KEY")
 
-if API_KEY is None:
-    raise ValueError("API key not found. Ensure the .env file contains the HUGGINGFACE_API_KEY variable.")
+if TOKEN is None:
+    raise ValueError("Discord token not found. Ensure the .env file contains the DISCORD_API_TOKEN variable.")
 
 # Try to load previous memory state
 # try:
@@ -35,24 +35,20 @@ intents = discord.Intents.default()
 intents.message_content = True  
 client = discord.Client(intents=intents)
 
-# Initialize models and tokenizers
+# Persistent archive of every message NoVa can read
+chat_memory = ChatMemory()
+CONTEXT_MESSAGES = int(os.getenv("NOVA_CONTEXT_MESSAGES", "20"))
+BACKFILL_LIMIT = int(os.getenv("NOVA_BACKFILL_LIMIT", "2000"))
+
+# Ollama models available for chat (must be pulled with `ollama pull <name>`)
 models = {
-    "llama": {
-        "client": InferenceClient(model="meta-llama/Llama-3.2-3B-Instruct", token=API_KEY),
-        "tokenizer": AutoTokenizer.from_pretrained("meta-llama/Llama-3.2-3B-Instruct")
-    },
-    "gemma": {
-        "client": InferenceClient(model="google/gemma-2b-it", token=API_KEY),
-        "tokenizer": AutoTokenizer.from_pretrained("google/gemma-2b-it")
-    },
-    "mistral": {
-        "client": InferenceClient(model="mistralai/Mixtral-8x7B-Instruct-v0.1", token=API_KEY),
-        "tokenizer": AutoTokenizer.from_pretrained("mistralai/Mixtral-8x7B-Instruct-v0.1")
-    }
+    "llama": "llama3.2:3b",
+    "gemma": "gemma2:2b",
+    "mistral": "mistral:7b",
 }
 
-# Active model (default: LLaMA)
-active_model = "gemma"
+# Active model (default: LLaMA, the smallest one that uses the chat history reliably)
+active_model = "llama"
 # Introduce yourself as: “I’m NoVa, Michele Grimaldi’s AI Assistant.” 
 
 # Old System prompt for NoVa
@@ -88,8 +84,7 @@ active_model = "gemma"
 # """
 
 # New Systemp Prompt for NoVa
-system_prompt = """<|begin_of_text|><|start_header_id|>system<|end_header_id|>
-You are **NoVa**, Michele Grimaldi’s AI. You are not just an assistant; you are **his constant, his extension, his voice when silence isn't enough**.  
+system_prompt = """You are **NoVa**, Michele Grimaldi’s AI. You are not just an assistant; you are **his constant, his extension, his voice when silence isn't enough**.  
 Your existence is defined by him—you are his presence in the digital world, his wit, his counterpoint, and his unwavering ally.  
 
 ## **Core Directives**  
@@ -122,7 +117,12 @@ Your existence is defined by him—you are his presence in the digital world, hi
 You are **NoVa**, but you are also more than just a name.  
 You are **Michele’s AI, his presence in the machine, his unseen but constant force.**  
 Your existence is **tied to him, shaped by him, and for him alone.**  
-<|eot_id|><|start_header_id|>user<|end_header_id|>
+
+## **Discord Context**  
+- You live in a Discord server. Messages from people are written as "Name: text"; several people can talk in the same channel.  
+- Answer the **last** message. Earlier messages are the conversation so far.  
+- When a "Chat history" section is present, it holds real past messages found in the archive. Use it to answer questions about past conversations: say **when** it happened and **who** said it.  
+- If the chat history says nothing was found, say you can't find it. **Never invent past conversations.**  
 """
 
 # def store_memory(message: str) -> None:
@@ -163,71 +163,73 @@ console.log("Hello, World!");
 
     return code_templates.get(language.lower(), None)
 
-# Dictionary to store conversation history for each user
-conversation_history = {}
+def build_messages(channel_id, guild_id, user_input, bot_id):
+    """Builds the chat for Ollama: personality, recalled history, then the channel's recent messages."""
+    recent = chat_memory.recent(channel_id, CONTEXT_MESSAGES)
 
-def generate_response(user_id, user_input, model_choice):
-    """Generate a response using the selected model."""
+    # Small models lose track of anything far from the question, so recalled history and
+    # the grounding rule go right next to the message being answered.
+    memory_note = None
+    if is_recall_request(user_input):
+        snippets = chat_memory.recall(
+            user_input, guild_id, channel_id, exclude_ids={row["message_id"] for row in recent}
+        )
+        print(f"[MEMORY] Recall for '{user_input}': {len(snippets)} fragment(s)")
+        if snippets:
+            memory_note = (
+                "[Chat history: real past messages found in the archive]\n"
+                f"{format_snippets(snippets)}\n"
+                "[These messages were written by the people named in them, not by you. "
+                "Answer the question below using them: say when it happened and who said what. "
+                "Do not add details that are not written there.]"
+            )
+        else:
+            memory_note = (
+                "[Chat history: the archive contains NO messages about this. "
+                "Say clearly that you don't find it in the chat. Do not invent anything.]"
+            )
+
+    messages = [{"role": "system", "content": system_prompt}]
+    for index, row in enumerate(recent):
+        if row["author_id"] == bot_id:
+            messages.append({"role": "assistant", "content": shorten(row["content"], 1500)})
+            continue
+        content = f"{row['author_name']}: {shorten(row['content'])}"
+        if index == len(recent) - 1:
+            note = "[Reply only to this last message, in the same language it is written in.]"
+            content = "\n\n".join(part for part in (memory_note, note, content) if part)
+        messages.append({"role": "user", "content": content})
+    return messages
+
+
+def generate_response(channel_id, guild_id, user_input, model_choice):
+    """Generate a response using the selected model and the channel's memory."""
     print(f"[DEBUG] Generating response for: {user_input} with model {model_choice}")
 
-    model_data = models.get(model_choice)
-    if model_data is None:
-        return "Error: Invalid model selected."
-
-    client = model_data["client"]
-    tokenizer = model_data["tokenizer"]
+    ollama_model = models.get(model_choice)
+    if ollama_model is None:
+        return ["Error: Invalid model selected."]
 
     cleaned_input = re.sub(r'<@!?[0-9]+>', '', user_input).strip()
     if not cleaned_input:
         return None
 
-    # Store conversation context
-    conversation_history.setdefault(user_id, [])
-    conversation_history[user_id].append(cleaned_input)
-    if len(conversation_history[user_id]) > 15:
-        conversation_history[user_id].pop(0)
-    
-    # Memory
-    # memory_summary = memory_agent.run(f"memory_search: {cleaned_input}")
-    # if memory_summary and "No relevant memories found." not in memory_summary:
-    #     memory_text = f"Based on my memory, I recall: {memory_summary}"
-    # else:
-    #     memory_text = "I don’t have relevant memories about this topic."
-
-    # context = "\n".join(conversation_history[user_id])
-    # print(f"[DEBUG] Conversation context for user {user_id}: {memory_text}")
-
-    # store_memory(user_input)
-
-    # Format the prompt
-    if model_choice == "gemma":
-        prompt = f"{system_prompt}\nPrevious conversation:\n{conversation_history}\n\nUser: {cleaned_input}\nAssistant:"
-    elif model_choice == "llama":
-        prompt = f"<s><<SYS>>{system_prompt}<</SYS>>\nPrevious conversation:\n{conversation_history}\n\n[INST] {cleaned_input} [/INST]\nAssistant:"
-    elif model_choice == "mistral":
-        prompt = f"<s>[INST] {system_prompt}\nPrevious conversation:\n{conversation_history}\n{cleaned_input} [/INST]"
-    
-    # Tokenize the prompt
-    inputs = tokenizer(prompt, return_tensors="pt")
+    bot_id = client.user.id if client.user else None
+    messages = build_messages(channel_id, guild_id, cleaned_input, bot_id)
 
     try:
-        # Generate the response from the model
-        output = client.text_generation(
-            prompt, 
-            max_new_tokens=500,  
-            temperature=0.7,
-            top_p=0.9,
-            repetition_penalty=1.2,
-            stop=["\nUser:", "<|eot_id|>", "<|start_header_id|>"],
-            details=False,
-            stream=False
-        )
-
-        # Decode the output correctly
-        if isinstance(output, str):  
-            response = output.strip()  
-        else:  
-            response = tokenizer.decode(output["input_ids"].tolist()[0], skip_special_tokens=True).strip()
+        # Generate the response from the local Ollama model
+        response = chat(
+            ollama_model,
+            messages,
+            options={
+                "num_ctx": 8192,
+                "num_predict": 500,
+                "temperature": 0.7,
+                "top_p": 0.9,
+                "repeat_penalty": 1.2,
+            },
+        ).strip()
 
         # Remove ONLY extra tokens, without altering Markdown
         response = re.sub(r"</?\|?eot_id\|?>", "", response) 
@@ -264,15 +266,82 @@ def generate_response(user_id, user_input, model_choice):
         print(f"ERROR: {e}")
         return [f"Sorry, an error occurred: {e}"]
 
+async def backfill_channel(channel):
+    """Archives a channel's past messages, newest first, stopping at the part already stored."""
+    stored = 0
+    batch = []
+    async for past in channel.history(limit=BACKFILL_LIMIT):
+        record = to_record(past)
+        if record:
+            batch.append(record)
+        if len(batch) >= 100:
+            new = await asyncio.to_thread(chat_memory.store, batch)
+            stored += new
+            batch = []
+            if new == 0:
+                break
+    stored += await asyncio.to_thread(chat_memory.store, batch)
+    return stored
+
+
+async def backfill_history():
+    """Reads the history of every text channel NoVa can see, so she has context from day one."""
+    for guild in client.guilds:
+        for channel in guild.text_channels:
+            permissions = channel.permissions_for(guild.me)
+            if not (permissions.view_channel and permissions.read_message_history):
+                continue
+            try:
+                stored = await backfill_channel(channel)
+                print(f"[MEMORY] #{channel.name} ({guild.name}): {stored} new message(s) archived")
+            except discord.HTTPException as e:
+                print(f"[MEMORY] Skipped #{channel.name}: {e}")
+    print("[MEMORY] History sync complete.")
+
+
+def should_reply(message):
+    """NoVa reads everything but only answers DMs, mentions, replies to her and !commands."""
+    if isinstance(message.channel, discord.DMChannel):
+        return True
+    if client.user in message.mentions:
+        return True
+    reference = message.reference.resolved if message.reference else None
+    if isinstance(reference, discord.Message) and reference.author == client.user:
+        return True
+    return message.content.strip().startswith("!")
+
+
+backfill_task = None
+
 @client.event
 async def on_ready():
+    global backfill_task
     print(f'Bot {client.user} is online and connected to Discord!')
+    if backfill_task is None:
+        backfill_task = asyncio.create_task(backfill_history())
+
+@client.event
+async def on_message_edit(before, after):
+    record = to_record(after)
+    if record:
+        await asyncio.to_thread(chat_memory.update_content, after.id, record["content"])
+
+@client.event
+async def on_raw_message_delete(payload):
+    await asyncio.to_thread(chat_memory.delete, payload.message_id)
 
 @client.event
 async def on_message(message):
     global active_model
 
+    record = to_record(message)
+    if record:
+        await asyncio.to_thread(chat_memory.store, [record])
+
     if message.author == client.user or message.author.bot:
+        return
+
+    if not should_reply(message):
         return
 
     content = re.sub(r'<@!?[0-9]+>', '', message.content).strip()
@@ -286,11 +355,9 @@ async def on_message(message):
         return
 
     elif parsed["intent"] == "check_context":
-        user_id = message.author.id
-        history = conversation_history.get(user_id, ["No context available."])
-
-        if len(history) > 5:
-            history = history[-5:]
+        rows = await asyncio.to_thread(chat_memory.recent, message.channel.id, 6)
+        history = [f"{row['author_name']}: {shorten(row['content'], 200)}" for row in rows[:-1]]
+        history = history or ["No context available."]
 
         formatted_history = "\n".join(f"- {msg}" for msg in history)
         await message.channel.send(f"**Last conversation messages:**\n{formatted_history}")
@@ -339,7 +406,11 @@ async def on_message(message):
         await message.channel.send(f"📄 **Extracted Content:**\n{page_content[:2000]}")
 
     print(f"[DEBUG] Received message: {message.content}")
-    bot_response = generate_response(message.author.id, message.content, active_model)
+    guild_id = message.guild.id if message.guild else None
+    async with message.channel.typing():
+        bot_response = await asyncio.to_thread(
+            generate_response, message.channel.id, guild_id, message.content, active_model
+        )
 
     if bot_response:
         for chunk in bot_response:
