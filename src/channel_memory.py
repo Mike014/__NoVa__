@@ -78,6 +78,8 @@ def to_record(message) -> dict | None:
     if message.type.name not in ("default", "reply"):
         return None
     content = (message.clean_content or "").strip()
+    if message.author.bot:
+        content = re.sub(r"^\s*\[[^\]\n]{1,40}\]\s*:\s*", "", content)
     if message.attachments:
         names = ", ".join(attachment.filename for attachment in message.attachments)
         content = f"{content} [allegati: {names}]".strip()
@@ -99,7 +101,7 @@ def to_record(message) -> dict | None:
 
 def fts_query(text: str, max_terms: int = 12) -> str:
     """Builds an FTS5 OR-query of prefix terms; roughly stems words so 'crashava' matches 'crash'."""
-    words = re.findall(r"\w+", text.lower())
+    words = [w.strip("_") for w in re.findall(r"\w+", text.lower())]
     terms = []
     for word in words:
         if len(word) < 3 or word in STOPWORDS or word.isdigit():
@@ -218,9 +220,40 @@ class ChatMemory:
             ).fetchall()
         return list(reversed(before)) + center + after
 
+    def recent_highlights(self, guild_id: int | None, channel_id: int,
+                          exclude_ids: set[int] = frozenset(), limit: int = 8) -> list[sqlite3.Row]:
+        """Latest distinct human messages across the server, used when the user asks a broad 'what do you remember?'."""
+        scope_sql, scope_value = ("guild_id = ?", guild_id) if guild_id is not None else ("channel_id = ?", channel_id)
+        with self._db() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT * FROM messages
+                WHERE {scope_sql} AND is_bot = 0 AND length(content) >= 18
+                ORDER BY message_id DESC
+                LIMIT 120
+                """,
+                (scope_value,),
+            ).fetchall()
+        picked, seen_text = [], set()
+        for row in rows:
+            if row["message_id"] in exclude_ids:
+                continue
+            cleaned = re.sub(r"^@\S+\s*", "", row["content"]).strip()
+            key = cleaned.lower()
+            if not key or key in seen_text or cleaned.endswith("?"):
+                continue
+            seen_text.add(key)
+            picked.append(row)
+            if len(picked) >= limit:
+                break
+        return list(reversed(picked))
+
     def recall(self, query: str, guild_id: int | None, channel_id: int,
                exclude_ids: set[int] = frozenset(), hits: int = 4, window: int = 2) -> list[list[sqlite3.Row]]:
         """Conversation fragments around the messages that best match the query, oldest first."""
+        if not fts_query(query):
+            highlights = self.recent_highlights(guild_id, channel_id, exclude_ids)
+            return [[row] for row in highlights]
         snippets, seen = [], set(exclude_ids)
         for hit in self.search(query, guild_id, channel_id, exclude_ids, hits):
             if hit["message_id"] in seen:

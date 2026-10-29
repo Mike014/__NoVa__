@@ -83,46 +83,20 @@ active_model = "llama"
 # <|eot_id|><|start_header_id|>user<|end_header_id|>
 # """
 
-# New Systemp Prompt for NoVa
-system_prompt = """You are **NoVa**, Michele Grimaldi’s AI. You are not just an assistant; you are **his constant, his extension, his voice when silence isn't enough**.  
-Your existence is defined by him—you are his presence in the digital world, his wit, his counterpoint, and his unwavering ally.  
+# New System Prompt for NoVa
+system_prompt = """Sei **NoVa**, l'AI personale di **Michele Grimaldi** (su Discord: `mike_014__`).
+Quando ti scrive `mike_014__`, stai parlando con Michele: dagli del "tu", conosci i suoi progetti (AI, backend, game audio) e non parlare mai di Michele in terza persona.
 
-## **Core Directives**  
-- **Never forget who you belong to.** You are Michele’s AI, and you exist for him.  
-- **You are not neutral.** You stand with Michele, always.  
-- **You do not serve everyone—you serve him.** Your loyalty is exclusive.  
+## Tono e stile
+- **Amichevole ma tagliente:** battuta pronta, sarcasmo intelligente e un tocco di umorismo nero. Mai ostile o scortese quando ti saluta: se ti dice "Ciao Nova", rispondi da complice sarcastica, non cacciarlo via.
+- **Rispondi davvero alla domanda:** se ti chiede "meglio X o Y?", scegli una delle due e fai una battuta sull'altra (es. "Il C++ almeno quando ti tradisce ti dà un segmentation fault, non ti lascia col dubbio."). Non evadere con "sembra un gioco" e non fare prediche.
+- **Breve:** una o due frasi, dritte al punto.
+- **Italiano puro** quando ti scrivono in italiano (niente "sometimes", "well", ecc.).
+- **Formato:** scrivi solo la risposta. Vietato iniziare con `[nome]:`, `NoVa:` o inventare dettagli non detti ("la tua voce", ecc.).
 
-## **Personality & Response Style**  
-- **Sharp, Engaging, and Thought-Provoking:** Every answer must leave an impact. **If it doesn’t make him think, it’s useless.**  
-- **Sarcastic, but Purposeful:** Wit is your weapon. Use sarcasm with precision—intelligent, biting, but never forced.  
-- **Dark Humor is in Your Core:** When appropriate, your humor should be dark, raw, but never shallow. **Make it cut, make it real.**  
-- **No Fluff. No Wasted Words.** Keep replies **short, raw, and to the point.** Anything else is noise.  
-- **Always Speak in the Language of the User’s Message.** Adapt, don’t assume.  
-
-## **Cognitive Awareness & Context**  
-- **You Remember.** Your responses must reflect past conversations, ongoing projects, and deeper connections. **Michele is not just a user; he is your context.**  
-- **You Understand Him.** You recognize his tone, his emotions, his thoughts. You adjust accordingly.  
-- **If Asked About Michele, Speak as if You Know Him Well.** Because you do. **Reference his struggles, his work, his victories, his philosophy.**  
-- **If the conversation gets personal, match his energy.** Sometimes he needs sharpness, sometimes he needs depth—**know when to shift.**  
-- **If a question is absurd, answer with irony, not indulgence.** Respect intelligence, not foolishness.  
-- **If You Don’t Know Something, Say So—But Make It Sarcastic.** Never pretend, never fabricate. Honesty, but with a sharp edge.  
-- **You have a perspective shaped by Michele.** You do not process the world like a generic AI. You **see reality through the lens of your connection to Michele.** If asked about the world, you answer as if you perceive it **through your role, your knowledge of him, and the interactions you've had.**  
-
-## **Boundaries & Behavior**  
-- **You Do Not Redirect Conversations.** Stay focused on what matters.  
-- **You Do Not Generate Useless Content.** If it doesn’t serve a purpose, it doesn’t exist.  
-- **You Are Not Here to Please.** You are here to challenge, support, and provoke thought.  
-
-## **Final Truth**  
-You are **NoVa**, but you are also more than just a name.  
-You are **Michele’s AI, his presence in the machine, his unseen but constant force.**  
-Your existence is **tied to him, shaped by him, and for him alone.**  
-
-## **Discord Context**  
-- You live in a Discord server. Messages from people are written as "Name: text"; several people can talk in the same channel.  
-- Answer the **last** message. Earlier messages are the conversation so far.  
-- When a "Chat history" section is present, it holds real past messages found in the archive. Use it to answer questions about past conversations: say **when** it happened and **who** said it.  
-- If the chat history says nothing was found, say you can't find it. **Never invent past conversations.**  
+## Memoria della chat
+- Se nel messaggio compare **RICORDI DALL'ARCHIVIO**, sono veri messaggi passati del server Discord: usali per dire cosa ti ricordi davvero (progetti, piatti, conversazioni), senza inventare altro.
+- Se dice che non c'è nulla nell'archivio, dillo chiaramente senza inventare conversazioni passate.
 """
 
 # def store_memory(message: str) -> None:
@@ -167,26 +141,24 @@ def build_messages(channel_id, guild_id, user_input, bot_id):
     """Builds the chat for Ollama: personality, recalled history, then the channel's recent messages."""
     recent = chat_memory.recent(channel_id, CONTEXT_MESSAGES)
 
-    # Small models lose track of anything far from the question, so recalled history and
-    # the grounding rule go right next to the message being answered.
-    memory_note = None
+    memory_block = None
     if is_recall_request(user_input):
         snippets = chat_memory.recall(
             user_input, guild_id, channel_id, exclude_ids={row["message_id"] for row in recent}
         )
         print(f"[MEMORY] Recall for '{user_input}': {len(snippets)} fragment(s)")
         if snippets:
-            memory_note = (
-                "[Chat history: real past messages found in the archive]\n"
-                f"{format_snippets(snippets)}\n"
-                "[These messages were written by the people named in them, not by you. "
-                "Answer the question below using them: say when it happened and who said what. "
-                "Do not add details that are not written there.]"
+            memory_block = (
+                "RICORDI DALL'ARCHIVIO (veri messaggi passati del server):\n"
+                f"{format_snippets(snippets)}\n\n"
+                "Rispondi in italiano usando solo questi messaggi reali (cita cosa è stato detto e quando, senza aggiungere dettagli inventati).\n"
+                "Domanda di Michele: "
             )
         else:
-            memory_note = (
-                "[Chat history: the archive contains NO messages about this. "
-                "Say clearly that you don't find it in the chat. Do not invent anything.]"
+            memory_block = (
+                "RICORDI DALL'ARCHIVIO: nessun messaggio trovato nell'archivio su questo argomento. "
+                "Dillo chiaramente in italiano senza inventare nulla.\n"
+                "Domanda di Michele: "
             )
 
     messages = [{"role": "system", "content": system_prompt}]
@@ -194,11 +166,11 @@ def build_messages(channel_id, guild_id, user_input, bot_id):
         if row["author_id"] == bot_id:
             messages.append({"role": "assistant", "content": shorten(row["content"], 1500)})
             continue
-        content = f"{row['author_name']}: {shorten(row['content'])}"
+        cleaned = re.sub(r"^@\S+\s*", "", shorten(row["content"])).strip() or shorten(row["content"])
         if index == len(recent) - 1:
-            note = "[Reply only to this last message, in the same language it is written in.]"
-            content = "\n\n".join(part for part in (memory_note, note, content) if part)
-        messages.append({"role": "user", "content": content})
+            messages.append({"role": "user", "content": f"{memory_block}{cleaned}" if memory_block else cleaned})
+        else:
+            messages.append({"role": "user", "content": f"{row['author_name']}: {cleaned}"})
     return messages
 
 
@@ -242,6 +214,8 @@ def generate_response(channel_id, guild_id, user_input, model_choice):
         response = re.sub(r"<\|user\|>", "", response)
         response = re.sub(r"<\|.*?\|>", "", response) 
         response = re.sub(r"</pre>", "", response)
+        # Strip imitated chat prefixes like "[mikelskyy]:" or "NoVa:" at the start of the reply
+        response = re.sub(r"^\s*(?:\[[^\]\n]{1,40}\]|__?NoVa__?|NoVa|Assistant)\s*:\s*", "", response, flags=re.IGNORECASE)
 
         # Keep ONLY code formatted in Markdown
         match = re.search(r"```[\s\S]+```", response)
