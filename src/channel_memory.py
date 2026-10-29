@@ -44,7 +44,8 @@ END;
 # Phrases that mean the user is asking NoVa to look back in the chat history.
 RECALL_CUES = (
     "ricord", "quella volta", "l'altra volta", "avevamo", "abbiamo parlato", "abbiamo detto",
-    "ne abbiamo", "ne parlammo", "hai detto", "ho detto", "mi avevi", "ti avevo", "in passato",
+    "ci siamo detti", "abbiamo scritto", "ne abbiamo", "ne parlammo", "hai detto", "ho detto",
+    "ho usato", "ho utilizzato", "ho scritto", "mi avevi", "ti avevo", "in passato", "in questa chat",
     "remember", "last time", "we talked", "we discussed", "you said", "i said", "did we",
 )
 
@@ -57,13 +58,17 @@ STOPWORDS = {
     "eri", "abbiamo", "avevamo", "avete", "hanno", "hai", "ho", "ha", "mi", "ti", "ci", "vi", "si",
     "tu", "io", "noi", "voi", "lui", "lei", "loro", "mio", "mia", "tuo", "tua", "nostro", "questo",
     "questa", "quello", "quella", "quelli", "quelle", "volta", "volte", "ricordi", "ricorda",
-    "ricordo", "ricordare", "parlato", "parlare", "detto", "dire", "fatto", "stato", "essere",
+    "ricordo", "ricordare", "ricordarti", "ricordarmi", "riesci", "riesco", "posso", "puoi",
+    "parlato", "parlare", "detto", "detti", "dette", "dire", "scritto", "scrivere", "usato",
+    "usare", "utilizzato", "utilizzare", "fatto", "stato", "siamo", "essere", "parola", "parole",
+    "frase", "chat", "canale", "messaggio", "messaggi", "esattamente", "precisamente", "perfetto",
     "sai", "qualcosa", "tutto", "tutti", "molto", "più", "piu", "già", "gia", "allora", "quindi",
     "nova",
     # English
     "the", "and", "you", "are", "was", "were", "what", "when", "where", "who", "why", "how", "that",
     "this", "with", "for", "about", "did", "does", "have", "has", "had", "remember", "time", "said",
     "talked", "discussed", "our", "your", "from", "not", "but", "can", "could", "would", "there",
+    "chat", "channel", "word", "exactly",
 }
 
 
@@ -71,6 +76,12 @@ def is_recall_request(text: str) -> bool:
     """True when the message asks about something said earlier in the chat."""
     lowered = text.lower()
     return any(cue in lowered for cue in RECALL_CUES)
+
+
+def is_this_channel_query(text: str) -> bool:
+    """True when the user asks specifically about the current chat/channel."""
+    lowered = text.lower()
+    return any(p in lowered for p in ("questa chat", "questo canale", "qui in chat", "this chat", "this channel"))
 
 
 def to_record(message) -> dict | None:
@@ -204,43 +215,49 @@ class ChatMemory:
                 """,
                 (match, scope_value, limit + len(exclude_ids)),
             ).fetchall()
-        return [row for row in rows if row["message_id"] not in exclude_ids][:limit]
+        return [
+            row for row in rows
+            if row["message_id"] not in exclude_ids and not is_recall_request(row["content"])
+        ][:limit]
 
     def around(self, channel_id: int, message_id: int, window: int = 2) -> list[sqlite3.Row]:
-        """A message with a few neighbours before and after it, in chronological order."""
+        """A message with a few human messages before and after it, in chronological order."""
         with self._db() as conn:
             before = conn.execute(
-                "SELECT * FROM messages WHERE channel_id = ? AND message_id < ? ORDER BY message_id DESC LIMIT ?",
+                "SELECT * FROM messages WHERE channel_id = ? AND is_bot = 0 AND message_id < ? ORDER BY message_id DESC LIMIT ?",
                 (channel_id, message_id, window),
             ).fetchall()
             center = conn.execute("SELECT * FROM messages WHERE message_id = ?", (message_id,)).fetchall()
             after = conn.execute(
-                "SELECT * FROM messages WHERE channel_id = ? AND message_id > ? ORDER BY message_id ASC LIMIT ?",
+                "SELECT * FROM messages WHERE channel_id = ? AND is_bot = 0 AND message_id > ? ORDER BY message_id ASC LIMIT ?",
                 (channel_id, message_id, window),
             ).fetchall()
         return list(reversed(before)) + center + after
 
     def recent_highlights(self, guild_id: int | None, channel_id: int,
                           exclude_ids: set[int] = frozenset(), limit: int = 8) -> list[sqlite3.Row]:
-        """Latest distinct human messages across the server, used when the user asks a broad 'what do you remember?'."""
+        """Latest distinct human statements across the server, used when the user asks a broad 'what do you remember?'."""
         scope_sql, scope_value = ("guild_id = ?", guild_id) if guild_id is not None else ("channel_id = ?", channel_id)
         with self._db() as conn:
             rows = conn.execute(
                 f"""
                 SELECT * FROM messages
-                WHERE {scope_sql} AND is_bot = 0 AND length(content) >= 18
+                WHERE {scope_sql} AND is_bot = 0
                 ORDER BY message_id DESC
-                LIMIT 120
+                LIMIT 200
                 """,
                 (scope_value,),
             ).fetchall()
+        skip_prefixes = ("ciao", "hello", "hi ", "hey", "hei", "salve", "use ", "switch ", "check", "!check")
         picked, seen_text = [], set()
         for row in rows:
             if row["message_id"] in exclude_ids:
                 continue
             cleaned = re.sub(r"^@\S+\s*", "", row["content"]).strip()
             key = cleaned.lower()
-            if not key or key in seen_text or cleaned.endswith("?"):
+            if len(cleaned) < 22 or key in seen_text or cleaned.endswith("?"):
+                continue
+            if key.startswith(skip_prefixes) or is_recall_request(cleaned):
                 continue
             seen_text.add(key)
             picked.append(row)
@@ -252,6 +269,9 @@ class ChatMemory:
                exclude_ids: set[int] = frozenset(), hits: int = 4, window: int = 2) -> list[list[sqlite3.Row]]:
         """Conversation fragments around the messages that best match the query, oldest first."""
         if not fts_query(query):
+            if is_this_channel_query(query):
+                rows = [r for r in self.recent(channel_id, 16) if r["message_id"] not in exclude_ids]
+                return [rows] if rows else []
             highlights = self.recent_highlights(guild_id, channel_id, exclude_ids)
             return [[row] for row in highlights]
         snippets, seen = [], set(exclude_ids)

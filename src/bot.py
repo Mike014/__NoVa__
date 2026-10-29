@@ -10,7 +10,6 @@ from smolagents_NoVa_ import SearchWebTool, SummarizeTextTool, VisitWebpageToolC
 import tensorflow as tf
 import numpy as np
 from tensorflow.keras.preprocessing.sequence import pad_sequences
-from memory_tool import memory_agent
 from channel_memory import ChatMemory, format_snippets, is_recall_request, shorten, to_record
 
 # Load environment variables from the .env file and the database
@@ -143,15 +142,14 @@ def build_messages(channel_id, guild_id, user_input, bot_id):
 
     memory_block = None
     if is_recall_request(user_input):
-        snippets = chat_memory.recall(
-            user_input, guild_id, channel_id, exclude_ids={row["message_id"] for row in recent}
-        )
+        current_id = {recent[-1]["message_id"]} if recent else set()
+        snippets = chat_memory.recall(user_input, guild_id, channel_id, exclude_ids=current_id)
         print(f"[MEMORY] Recall for '{user_input}': {len(snippets)} fragment(s)")
         if snippets:
             memory_block = (
                 "RICORDI DALL'ARCHIVIO (veri messaggi passati del server):\n"
                 f"{format_snippets(snippets)}\n\n"
-                "Rispondi in italiano usando solo questi messaggi reali (cita cosa è stato detto e quando, senza aggiungere dettagli inventati).\n"
+                "Rispondi in italiano usando solo questi messaggi reali (cita la frase esatta o cosa è stato detto e quando, senza aggiungere dettagli inventati).\n"
                 "Domanda di Michele: "
             )
         else:
