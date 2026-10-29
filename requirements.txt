@@ -2,8 +2,5 @@ discord.py
 python-dotenv
 requests
 smolagents[openai]
-duckduckgo-search
+ddgs
 markdownify
-spacy
-numpy
-tensorflow

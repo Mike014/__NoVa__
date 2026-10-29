@@ -1,12 +1,13 @@
 import os
 import requests
 from dotenv import load_dotenv
-from smolagents import OpenAIServerModel
+from smolagents import ChatMessage, MessageRole, Model
+from smolagents.models import get_clean_message_list
 
 load_dotenv()
 
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
-AGENT_MODEL = os.getenv("OLLAMA_AGENT_MODEL", "qwen2.5-coder:7b")
+AGENT_MODEL = os.getenv("OLLAMA_AGENT_MODEL", "llama3.2:3b")
 
 
 def _options(options: dict | None) -> dict:
@@ -29,6 +30,24 @@ def chat(model: str, messages: list[dict], options: dict | None = None, timeout:
     return response.json()["message"]["content"]
 
 
-def agent_model(model_id: str = AGENT_MODEL) -> OpenAIServerModel:
-    """Returns a SmolAgents model backed by Ollama's OpenAI-compatible endpoint."""
-    return OpenAIServerModel(model_id=model_id, api_base=f"{OLLAMA_HOST}/v1", api_key="ollama")
+class OllamaModel(Model):
+    """SmolAgents model on Ollama's native API, so options like OLLAMA_NUM_GPU apply to the agent too
+    (the OpenAI-compatible endpoint ignores them)."""
+
+    ROLES = {MessageRole.TOOL_CALL: MessageRole.ASSISTANT, MessageRole.TOOL_RESPONSE: MessageRole.USER}
+
+    def __init__(self, model_id: str = AGENT_MODEL, num_ctx: int = 8192):
+        super().__init__(model_id=model_id, flatten_messages_as_text=True)
+        self.num_ctx = num_ctx
+
+    def generate(self, messages, stop_sequences=None, response_format=None, tools_to_call_from=None, **kwargs):
+        clean = get_clean_message_list(messages, role_conversions=self.ROLES, flatten_messages_as_text=True)
+        options = {"num_ctx": self.num_ctx}
+        if stop_sequences:
+            options["stop"] = stop_sequences
+        return ChatMessage(role=MessageRole.ASSISTANT, content=chat(self.model_id, clean, options))
+
+
+def agent_model(model_id: str = AGENT_MODEL) -> OllamaModel:
+    """Returns a SmolAgents model backed by the local Ollama server."""
+    return OllamaModel(model_id)

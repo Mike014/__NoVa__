@@ -1,101 +1,32 @@
-from smolagents import Tool, CodeAgent, DuckDuckGoSearchTool, VisitWebpageTool
+from smolagents import CodeAgent, DuckDuckGoSearchTool, VisitWebpageTool
 from ollama_client import agent_model
 
-model = agent_model()
-
-class SummarizeTextTool(Tool):
-    """
-    This tool summarizes a given text by returning the first half of its words.
-    """
-    name = "text_summarizer"
-    description = "Summarizes a text by providing the first half of its words."
-
-    inputs = {
-        "text": {
-            "type": "string",
-            "description": "The text to be summarized. It should contain at least one sentence.",
-        }
-    }
-    
-    output_type = "string"
-
-    def forward(self, text: str) -> str:
-        words = text.split()
-        return " ".join(words[:len(words) // 2]) if words else "No content to summarize."
+# One agent with the two web tools; max_steps keeps a confused local model from looping for minutes.
+agent = CodeAgent(
+    tools=[DuckDuckGoSearchTool(max_results=5), VisitWebpageTool(max_output_length=20000)],
+    model=agent_model(),
+    max_steps=4,
+)
 
 
-class SearchWebTool(Tool):
-    """
-    This tool performs a web search using DuckDuckGo.
-    """
-    name = "web_search"
-    description = "Performs an online search and returns the best results."
-
-    inputs = {
-        "query": {
-            "type": "string",
-            "description": "The search query to execute on DuckDuckGo.",
-        }
-    }
-    
-    output_type = "string"
-
-    def forward(self, query: str) -> str:
-        agent = CodeAgent(tools=[DuckDuckGoSearchTool()], model=model)
-        result = agent.run(query)
-        return "\n".join(result) if isinstance(result, list) else result.strip()
+def search_web(query: str) -> str:
+    """Searches the web and returns a short answer with sources."""
+    result = agent.run(
+        f"Search the web for: {query}\n"
+        "Answer in Italian with at most 5 short bullet points, each with its source link."
+    )
+    return str(result).strip() or "No results found."
 
 
-class VisitWebpageToolCustom(Tool):
-    """
-    This tool visits a webpage and analyzes its content.
-    """
-    name = "visit_webpage"
-    description = "Fetches and analyzes the content of a given webpage."
+def visit_webpage(url: str) -> str:
+    """Reads a webpage and returns a short summary of its content."""
+    result = agent.run(
+        f"Visit the webpage {url}\n"
+        "Summarize its main content in Italian with at most 6 short bullet points."
+    )
+    return str(result).strip() or "No content retrieved."
 
-    inputs = {
-        "url": {
-            "type": "string",
-            "description": "The URL of the webpage to visit.",
-        }
-    }
-    
-    output_type = "string"
-
-    def forward(self, url: str) -> str:
-        agent = CodeAgent(tools=[VisitWebpageTool()], model=model)
-        result = agent.run(url)
-        return result if isinstance(result, str) else "No content retrieved."
-
-
-# Instantiate the tools
-summarize_tool = SummarizeTextTool()
-search_tool = SearchWebTool()
-visit_webpage_tool = VisitWebpageToolCustom()
-
-# Create an agent with all tools
-agent = CodeAgent(tools=[summarize_tool, search_tool, visit_webpage_tool], model=model)
-
-def main():
-    # # Example of a web search
-    # query = "Best AI frameworks in 2025"
-    # search_results = agent.run("web_search: " + query)
-    # print(f"Search results for '{query}':\n{search_results}\n")
-
-    # # Example of text summarization
-    # sample_text = (
-    #     "Artificial intelligence is transforming the world by automating tasks and "
-    #     "providing insights across various industries. With continuous innovation "
-    #     "and integration into daily life, AI systems are becoming more capable and accessible."
-    # )
-    # summary = agent.run("text_summarizer: " + sample_text)
-    # print("Original text:\n", sample_text)
-    # print("\nSummary (first half of the words):\n", summary)
-
-    # Example of visiting a webpage
-    url = "https://www.linkedin.com/in/michele-grimaldi-599b36280/"
-    webpage_content = agent.run("visit_webpage: " + url)
-    print(f"\nContent from '{url}':\n{webpage_content}")
 
 if __name__ == "__main__":
-    main()
+    print(search_web("Best AI frameworks in 2025"))
+    print(visit_webpage("https://huggingface.co"))

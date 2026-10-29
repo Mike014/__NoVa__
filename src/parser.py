@@ -1,70 +1,59 @@
 import re
-import spacy
 
-# Load the NLP model to analyze the text
-nlp = spacy.load("en_core_web_sm")
+MODELS = ("gemma", "llama", "mistral")
+
+# Patterns are matched against the original text, so URLs, queries and texts keep their case.
+SEARCH = re.compile(r"^!search\s+(.+)", re.IGNORECASE | re.DOTALL)
+CONTEXT = re.compile(r"^!context\b", re.IGNORECASE)
+SUMMARIZE = re.compile(
+    r"\b(?:summarize|shorten|compress|riassumi)\s+(?:this|the following|questo|il seguente)\s+(?:text|testo)\s*:\s*(.+)",
+    re.IGNORECASE | re.DOTALL,
+)
+VISIT = re.compile(
+    r"\b(?:visit|open|analyze|visita|apri|analizza)\s+(?:the\s+|la\s+)?(?:webpage|page|pagina)\s+(\S+)",
+    re.IGNORECASE,
+)
+CHANGE_MODEL = re.compile(rf"^(?:use|switch to|change to|usa|passa a)\s+({'|'.join(MODELS)})\b", re.IGNORECASE)
+TIME = re.compile(r"\b(?:what time is it|tell me the time|che or[ea] (?:sono|è|e'))\b", re.IGNORECASE)
+
 
 def parse_command(user_input):
     """
     Analyzes the user's message and returns the intent and relevant parameters.
     """
-    user_input = user_input.lower().strip()
+    text = user_input.strip()
 
-    # Recognize the web search command
-    if user_input.startswith("!search"):
-        query = user_input.replace("!search", "").strip()
-        return {"intent": "search_web", "parameters": {"query": query}}
+    if match := SEARCH.match(text):
+        return {"intent": "search_web", "parameters": {"query": match.group(1).strip()}}
 
-    # Recognize the text summarization command
-    match_summarize = re.search(r"(summarize|shorten|compress) (this|the following) text: (.+)", user_input)
-    if match_summarize:
-        text_to_summarize = match_summarize.group(3).strip()
-        return {"intent": "summarize_text", "parameters": {"text": text_to_summarize}}
+    if CONTEXT.match(text):
+        return {"intent": "check_context", "parameters": {}}
 
-    # Recognize the visit webpage command
-    match_visit_webpage = re.search(r"(visit|open|analyze) webpage (.+)", user_input)
-    if match_visit_webpage:
-        url = match_visit_webpage.group(2).strip()
-        return {"intent": "visit_webpage", "parameters": {"url": url}}
+    if match := SUMMARIZE.search(text):
+        return {"intent": "summarize_text", "parameters": {"text": match.group(1).strip()}}
 
-    # Commands to change the model
-    match_model = re.search(r"(use|switch to|change to)\s*(gemma|llama|mistral)", user_input)
-    if match_model:
-        return {"intent": "change_model", "parameters": {"model": match_model.group(2)}}
+    if match := VISIT.search(text):
+        return {"intent": "visit_webpage", "parameters": {"url": match.group(1).strip()}}
 
-    # Commands to check the context (e.g., "What did we say before?")
-    # match_context = re.search(r"(what did we say|do you remember.*\?)", user_input)
-    # if match_context:
-    #     return {"intent": "check_context", "parameters": {}}
-    if user_input.lower() in ["check memory", "what do you remember?", "recall memory"]:
-        return {"intent": "check_memory", "parameters": {}}
-    
-    # Time recognitionuse
-    if "what time is it" in user_input or "tell me the time" in user_input:
+    if match := CHANGE_MODEL.match(text):
+        return {"intent": "change_model", "parameters": {"model": match.group(1).lower()}}
+
+    if TIME.search(text):
         return {"intent": "get_time", "parameters": {}}
 
-    # Recognition of code requests with specific language
-    match_code = re.search(r"(write|generate|create).*code (in|for|on) (\w+)", user_input)
-    if match_code:
-        language = match_code.group(3).lower()
-        supported_languages = ["python", "c++", "java", "javascript"]
-        if language in supported_languages:
-            return {"intent": "generate_code", "parameters": {"language": language}}
-        else:
-            return {"intent": "unsupported_language", "parameters": {"language": language}}
-
     return {"intent": "unknown", "parameters": {}}
+
 
 # Local test of the parser
 if __name__ == "__main__":
     test_messages = [
         "!search Best AI frameworks in 2025",
+        "!context",
         "Summarize this text: Artificial intelligence is transforming the world by automating tasks.",
-        "Visit webpage https://huggingface.co",
-        "Write code in Python",
-        "Generate a function to add two numbers in C++",
-        "Create Java code for a class",
-        "What time is it?",
+        "Visit webpage https://huggingface.co/Qwen",
+        "switch to Gemma",
+        "Che ore sono?",
+        "Scrivimi un hello world in C++",
     ]
     for msg in test_messages:
         print(f"User: {msg} -> Parsed: {parse_command(msg)}")

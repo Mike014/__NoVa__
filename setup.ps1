@@ -50,10 +50,6 @@ if ($LASTEXITCODE -ne 0) { throw "Aggiornamento di pip fallito." }
 & $venvPython -m pip install -r requirements.txt
 if ($LASTEXITCODE -ne 0) { throw "Installazione delle dipendenze fallita." }
 
-Write-Step "Scarico il modello spaCy en_core_web_sm"
-& $venvPython -m spacy download en_core_web_sm
-if ($LASTEXITCODE -ne 0) { throw "Download del modello spaCy fallito." }
-
 Write-Step "Controllo Ollama"
 $ollama = Find-Ollama
 if (-not $ollama) {
@@ -80,7 +76,7 @@ Write-Host "Ollama: $ollama"
 & $ollama --version
 
 Write-Step "Scarico i modelli (circa 12 GB, la prima volta ci vuole un po')"
-$models = @("gemma2:2b", "llama3.2:3b", "mistral:7b", "qwen2.5-coder:7b")
+$models = @("gemma2:2b", "llama3.2:3b", "mistral:7b")
 foreach ($model in $models) {
     Write-Host "ollama pull $model"
     & $ollama pull $model
@@ -92,7 +88,7 @@ if (-not (Test-Path ".env")) {
     @"
 DISCORD_API_TOKEN=
 OLLAMA_HOST=http://localhost:11434
-OLLAMA_AGENT_MODEL=qwen2.5-coder:7b
+OLLAMA_AGENT_MODEL=llama3.2:3b
 "@ | Set-Content -Path ".env" -Encoding utf8
     Write-Host "Creato .env vuoto: apri il file e incolla il token del bot Discord." -ForegroundColor Yellow
 } else {

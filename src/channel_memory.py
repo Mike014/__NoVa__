@@ -123,6 +123,10 @@ def fts_query(text: str, max_terms: int = 12) -> str:
     return " OR ".join(f'"{term}"*' for term in unique)
 
 
+def placeholders(values: list) -> str:
+    return ", ".join("?" for _ in values)
+
+
 def format_date(iso_value: str) -> str:
     return datetime.fromisoformat(iso_value).astimezone().strftime("%d/%m/%Y %H:%M")
 
@@ -188,32 +192,31 @@ class ChatMemory:
         with self._db() as conn:
             conn.execute("DELETE FROM messages WHERE message_id = ?", (message_id,))
 
-    def recent(self, channel_id: int, limit: int = 20) -> list[sqlite3.Row]:
-        """Latest messages of a channel, oldest first."""
+    def recent(self, channel_id: int, limit: int = 20, up_to: int | None = None) -> list[sqlite3.Row]:
+        """Latest messages of a channel (optionally up to a given message), oldest first."""
         with self._db() as conn:
             rows = conn.execute(
-                "SELECT * FROM messages WHERE channel_id = ? ORDER BY message_id DESC LIMIT ?",
-                (channel_id, limit),
+                "SELECT * FROM messages WHERE channel_id = ? AND message_id <= ? ORDER BY message_id DESC LIMIT ?",
+                (channel_id, up_to if up_to is not None else 2**63 - 1, limit),
             ).fetchall()
         return list(reversed(rows))
 
-    def search(self, query: str, guild_id: int | None, channel_id: int,
+    def search(self, query: str, channel_ids: list[int],
                exclude_ids: set[int] = frozenset(), limit: int = 4) -> list[sqlite3.Row]:
-        """Best-matching human messages in the same server (or the same DM channel)."""
+        """Best-matching human messages in the given channels."""
         match = fts_query(query)
-        if not match:
+        if not match or not channel_ids:
             return []
-        scope_sql, scope_value = ("m.guild_id = ?", guild_id) if guild_id is not None else ("m.channel_id = ?", channel_id)
         with self._db() as conn:
             rows = conn.execute(
                 f"""
                 SELECT m.* FROM messages_fts
                 JOIN messages m ON m.message_id = messages_fts.rowid
-                WHERE messages_fts MATCH ? AND {scope_sql} AND m.is_bot = 0
+                WHERE messages_fts MATCH ? AND m.channel_id IN ({placeholders(channel_ids)}) AND m.is_bot = 0
                 ORDER BY bm25(messages_fts)
                 LIMIT ?
                 """,
-                (match, scope_value, limit + len(exclude_ids)),
+                (match, *channel_ids, limit + len(exclude_ids)),
             ).fetchall()
         return [
             row for row in rows
@@ -234,19 +237,20 @@ class ChatMemory:
             ).fetchall()
         return list(reversed(before)) + center + after
 
-    def recent_highlights(self, guild_id: int | None, channel_id: int,
+    def recent_highlights(self, channel_ids: list[int],
                           exclude_ids: set[int] = frozenset(), limit: int = 8) -> list[sqlite3.Row]:
-        """Latest distinct human statements across the server, used when the user asks a broad 'what do you remember?'."""
-        scope_sql, scope_value = ("guild_id = ?", guild_id) if guild_id is not None else ("channel_id = ?", channel_id)
+        """Latest distinct human statements in the given channels, used when the user asks a broad 'what do you remember?'."""
+        if not channel_ids:
+            return []
         with self._db() as conn:
             rows = conn.execute(
                 f"""
                 SELECT * FROM messages
-                WHERE {scope_sql} AND is_bot = 0
+                WHERE channel_id IN ({placeholders(channel_ids)}) AND is_bot = 0
                 ORDER BY message_id DESC
                 LIMIT 200
                 """,
-                (scope_value,),
+                channel_ids,
             ).fetchall()
         skip_prefixes = ("ciao", "hello", "hi ", "hey", "hei", "salve", "use ", "switch ", "check", "!check")
         picked, seen_text = [], set()
@@ -265,17 +269,17 @@ class ChatMemory:
                 break
         return list(reversed(picked))
 
-    def recall(self, query: str, guild_id: int | None, channel_id: int,
+    def recall(self, query: str, channel_id: int, channel_ids: list[int],
                exclude_ids: set[int] = frozenset(), hits: int = 4, window: int = 2) -> list[list[sqlite3.Row]]:
-        """Conversation fragments around the messages that best match the query, oldest first."""
+        """Conversation fragments around the best matches in the allowed channels, oldest first."""
         if not fts_query(query):
             if is_this_channel_query(query):
                 rows = [r for r in self.recent(channel_id, 16) if r["message_id"] not in exclude_ids]
                 return [rows] if rows else []
-            highlights = self.recent_highlights(guild_id, channel_id, exclude_ids)
+            highlights = self.recent_highlights(channel_ids, exclude_ids)
             return [[row] for row in highlights]
         snippets, seen = [], set(exclude_ids)
-        for hit in self.search(query, guild_id, channel_id, exclude_ids, hits):
+        for hit in self.search(query, channel_ids, exclude_ids, hits):
             if hit["message_id"] in seen:
                 continue
             rows = [row for row in self.around(hit["channel_id"], hit["message_id"], window)
